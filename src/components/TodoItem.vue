@@ -1,45 +1,45 @@
 <script setup lang="ts">
-import type { Todo } from "../types/todo";
-import { computed, ref } from "vue";
-import SwipeCell from "./SwipeCell.vue";
+import type { Todo } from '../types/todo'
+import { computed, ref } from 'vue'
+import SwipeCell from './SwipeCell.vue'
 
 const props = defineProps<{
   todo: Todo;
-}>();
+}>()
 
 const emit = defineEmits<{
-  (e: "toggle", id: string): void;
-  (e: "delete", id: string): void;
-}>();
+  (e: 'toggle', id: string): void;
+  (e: 'delete', id: string): void;
+}>()
 
-const isDeleting = ref(false);
+const isDeleting = ref(false)
 
 const dateString = computed(() => {
-  return new Date(props.todo.createdAt).toLocaleDateString("zh-CN", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-});
+  return new Date(props.todo.createdAt).toLocaleDateString('zh-CN', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+})
 
 const handleBeforeClose = async (position: string) => {
-  if (position === "right" || position === "cell") {
-    isDeleting.value = true;
+  if (position === 'right' || position === 'cell') {
+    isDeleting.value = true
     // 模拟异步
-    await new Promise((r) => setTimeout(r, 600)); // 慢一点以看到动画
-    emit("delete", props.todo.id);
-    isDeleting.value = false;
-    return true;
+    await new Promise((r) => setTimeout(r, 600)) // 慢一点以看到动画
+    emit('delete', props.todo.id)
+    isDeleting.value = false
+    return true
   }
-  return false;
-};
+  return false
+}
 
 
 </script>
 
 <template>
-  <SwipeCell 
+  <SwipeCell
     class="todo-wrapper-cell"
     :right-width="88"
     :trigger-width="180"
@@ -82,8 +82,8 @@ const handleBeforeClose = async (position: string) => {
         >
           <div class="trash-btn">
             <div class="trash-can">
-            <!-- 盖子：仅在拉动足够多后旋转（>0.2比例开始打开） -->
-            <!-- dragRatio 1.0 是状态2。dragRatio > 1.5 可能是状态3。 -->
+              <!-- 盖子：仅在拉动足够多后旋转（>0.2比例开始打开） -->
+              <!-- dragRatio 1.0 是状态2。dragRatio > 1.5 可能是状态3。 -->
               <div
                 class="trash-lid"
                 :style="{
@@ -93,28 +93,28 @@ const handleBeforeClose = async (position: string) => {
                   )}deg)`,
                 }"
               >
-              <svg width="24" height="6" viewBox="0 0 24 6" fill="currentColor">
-                <path
-                  d="M5 2C5 0.895431 5.89543 0 7 0H17C18.1046 0 19 0.895431 19 2H24V5C24 5.55228 23.5523 6 23 6H1C0.447715 6 0 5.55228 0 5V2H5Z"
-                />
-                <path d="M9 0H15V2H9V0Z" />
-              </svg>
-            </div>
-            <!-- 桶身 -->
-            <div class="trash-body">
-              <svg
-                width="20"
-                height="22"
-                viewBox="0 0 20 22"
-                fill="currentColor"
-              >
-                <path
-                  fill-rule="evenodd"
-                  clip-rule="evenodd"
-                  d="M1 2H19L17.5 20C17.5 21.1046 16.6046 22 15.5 22H4.5C3.39543 22 2.5 21.1046 2.5 20L1 2ZM5 5H7V19H5V5ZM9 5H11V19H9V5ZM13 5H15V19H13V5Z"
-                />
-              </svg>
-            </div>
+                <svg width="24" height="6" viewBox="0 0 24 6" fill="currentColor">
+                  <path
+                    d="M5 2C5 0.895431 5.89543 0 7 0H17C18.1046 0 19 0.895431 19 2H24V5C24 5.55228 23.5523 6 23 6H1C0.447715 6 0 5.55228 0 5V2H5Z"
+                  />
+                  <path d="M9 0H15V2H9V0Z" />
+                </svg>
+              </div>
+              <!-- 桶身 -->
+              <div class="trash-body">
+                <svg
+                  width="20"
+                  height="22"
+                  viewBox="0 0 20 22"
+                  fill="currentColor"
+                >
+                  <path
+                    fill-rule="evenodd"
+                    clip-rule="evenodd"
+                    d="M1 2H19L17.5 20C17.5 21.1046 16.6046 22 15.5 22H4.5C3.39543 22 2.5 21.1046 2.5 20L1 2ZM5 5H7V19H5V5ZM9 5H11V19H9V5ZM13 5H15V19H13V5Z"
+                  />
+                </svg>
+              </div>
             </div>
           </div>
         </div>

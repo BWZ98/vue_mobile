@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
-import { useTodoStore } from '../stores/todo';
-import TodoItem from '../components/TodoItem.vue';
+import { onMounted, ref } from 'vue'
+import { useTodoStore } from '../stores/todo'
+import TodoItem from '../components/TodoItem.vue'
 
-const todoStore = useTodoStore();
-const newTodoContent = ref('');
+const todoStore = useTodoStore()
+const newTodoContent = ref('')
 
 onMounted(() => {
-  todoStore.fetchTodos();
-});
+  todoStore.fetchTodos()
+})
 
 const handleAdd = () => {
   if (newTodoContent.value.trim()) {
-    todoStore.addTodo(newTodoContent.value.trim());
-    newTodoContent.value = '';
+    todoStore.addTodo(newTodoContent.value.trim())
+    newTodoContent.value = ''
   }
-};
+}
 </script>
 
 <template>
@@ -54,7 +54,8 @@ const handleAdd = () => {
       
       <div v-if="todoStore.todos.length === 0" class="empty-state">
         <p>No tasks yet. Enjoy your day!</p>
-      </div>
+      </div> 
+
     </div>
   </div>
 </template>

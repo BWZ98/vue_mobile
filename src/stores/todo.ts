@@ -1,10 +1,10 @@
-import { defineStore } from 'pinia';
-import { ref } from 'vue';
-import type { Todo } from '../types/todo';
+import { defineStore } from 'pinia'
+import { ref } from 'vue'
+import type { Todo } from '../types/todo'
 
 export const useTodoStore = defineStore('todo', () => {
-  const todos = ref<Todo[]>([]);
-  const loading = ref(false);
+  const todos = ref<Todo[]>([])
+  const loading = ref(false)
 
   // Mock data generator
   const generateMockTodos = (): Todo[] => {
@@ -20,28 +20,28 @@ export const useTodoStore = defineStore('todo', () => {
         content: '事务2',
         isCompleted: false,
         createdAt: Date.now() - 50000,
-      }
-    ];
-  };
+      },
+    ]
+  }
 
   const fetchTodos = async () => {
-    loading.value = true;
+    loading.value = true
     // Simulate network delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
-    todos.value = generateMockTodos();
-    loading.value = false;
-  };
+    await new Promise((resolve) => setTimeout(resolve, 800))
+    todos.value = generateMockTodos()
+    loading.value = false
+  }
 
   const toggleTodo = (id: string) => {
-    const todo = todos.value.find((t) => t.id === id);
+    const todo = todos.value.find((t) => t.id === id)
     if (todo) {
-      todo.isCompleted = !todo.isCompleted;
+      todo.isCompleted = !todo.isCompleted
     }
-  };
+  }
 
   const deleteTodo = (id: string) => {
-    todos.value = todos.value.filter((t) => t.id !== id);
-  };
+    todos.value = todos.value.filter((t) => t.id !== id)
+  }
 
   const addTodo = (content: string) => {
     todos.value.unshift({
@@ -49,8 +49,8 @@ export const useTodoStore = defineStore('todo', () => {
       content,
       isCompleted: false,
       createdAt: Date.now(),
-    });
-  };
+    })
+  }
 
   return {
     todos,
@@ -59,5 +59,5 @@ export const useTodoStore = defineStore('todo', () => {
     toggleTodo,
     deleteTodo,
     addTodo,
-  };
-});
+  }
+})

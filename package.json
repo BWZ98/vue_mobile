@@ -9,8 +9,7 @@
   },
   "lint-staged": {
     "*.{js,ts,vue}": [
-      "eslint --fix",
-      "prettier --write"
+      "eslint --fix"
     ]
   },
   "type": "module",
@@ -31,9 +30,9 @@
     "@commitlint/cli": "^20.2.0",
     "@commitlint/config-conventional": "^20.2.0",
     "@eslint/js": "^9.39.2",
+    "@stylistic/eslint-plugin": "^5.6.1",
     "@types/node": "^24.10.1",
     "@vitejs/plugin-vue": "^6.0.1",
-    "@vue/eslint-config-prettier": "^10.2.0",
     "@vue/eslint-config-typescript": "^14.6.0",
     "@vue/tsconfig": "^0.8.1",
     "commitizen": "^4.3.1",
@@ -43,7 +42,6 @@
     "globals": "^16.5.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.2.7",
-    "prettier": "^3.7.4",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.50.1",
     "vite": "^7.2.4",
