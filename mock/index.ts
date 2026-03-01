@@ -1,4 +1,5 @@
 import { MockMethod } from 'vite-plugin-mock'
+import dayjs from 'dayjs'
 
 // Define the initial default data
 let todos = [
@@ -109,6 +110,44 @@ export default [
         code: 404,
         message: 'Todo not found',
         data: null,
+      }
+    },
+  },
+
+  {
+    url: '/api/stats',
+    method: 'get',
+    response: ({ query }: { query: Record<string, string> }) => {
+      const { startDate, endDate, dimension } = query
+      // dimension: 'day', 'week', 'month'
+      // default to 1 year ago to now if not provided
+      const start = startDate ? dayjs(Number(startDate)) : dayjs().subtract(1, 'year')
+      const end = endDate ? dayjs(Number(endDate)) : dayjs()
+      const dim = dimension || 'month'
+
+      const data = []
+      let current = start.startOf(dim as dayjs.OpUnitType)
+      
+      // Generate some stock-like walking test data
+      let baseCount = 50
+      
+      while (current.isBefore(end) || current.isSame(end, dim as dayjs.OpUnitType)) {
+        // Random walk
+        const change = Math.floor(Math.random() * 21) - 10 // -10 to +10
+        baseCount = Math.max(10, baseCount + change) // Keep above 10
+        
+        data.push({
+          time: current.valueOf(),
+          date: current.format('YYYY-MM-DD'),
+          count: baseCount,
+        })
+        current = current.add(1, dim as dayjs.ManipulateType)
+      }
+
+      return {
+        code: 200,
+        message: 'Success',
+        data,
       }
     },
   },

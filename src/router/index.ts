@@ -9,6 +9,11 @@ const router = createRouter({
       name: 'home',
       component: TodoListView,
     },
+    {
+      path: '/stats',
+      name: 'stats',
+      component: () => import('../views/StatisticsView.vue'),
+    },
   ],
 })
 
