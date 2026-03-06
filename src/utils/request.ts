@@ -16,6 +16,8 @@ request.interceptors.request.use(
   },
 )
 
+import { showToast } from 'vant'
+
 // Response Interceptor
 request.interceptors.response.use(
   (response) => {
@@ -24,12 +26,15 @@ request.interceptors.response.use(
     if (res.code === 200) {
       return res.data
     } else {
-      console.error('API Error:', res.message)
-      return Promise.reject(new Error(res.message || 'Error occurred'))
+      const errMsg = res.message || 'Error occurred'
+      console.error('API Error:', errMsg)
+      showToast(errMsg)
+      return Promise.reject(new Error(errMsg))
     }
   },
   (error) => {
     console.error('Network Error:', error)
+    showToast(error.message || 'Network Error')
     return Promise.reject(error)
   },
 )

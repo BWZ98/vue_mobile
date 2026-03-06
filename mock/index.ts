@@ -117,31 +117,27 @@ export default [
   {
     url: '/api/stats',
     method: 'get',
-    response: ({ query }: { query: Record<string, string> }) => {
-      const { startDate, endDate, dimension } = query
-      // dimension: 'day', 'week', 'month'
-      // default to 1 year ago to now if not provided
-      const start = startDate ? dayjs(Number(startDate)) : dayjs().subtract(1, 'year')
-      const end = endDate ? dayjs(Number(endDate)) : dayjs()
-      const dim = dimension || 'month'
+    response: () => {
+      const end = dayjs()
+      const start = end.subtract(30, 'day')
 
       const data = []
-      let current = start.startOf(dim as dayjs.OpUnitType)
+      let current = start
       
-      // Generate some stock-like walking test data
-      let baseCount = 50
+      let baseCount = 5
       
-      while (current.isBefore(end) || current.isSame(end, dim as dayjs.OpUnitType)) {
-        // Random walk
-        const change = Math.floor(Math.random() * 21) - 10 // -10 to +10
-        baseCount = Math.max(10, baseCount + change) // Keep above 10
+      // 生成近 30 天，每 2 分钟一条的数据（约 21600 条数据）
+      while (current.isBefore(end)) {
+        const change = Math.floor(Math.random() * 5) - 2 // -2 到 +2 的变化
+        // 限制在 1-10 范围内
+        baseCount = Math.max(1, Math.min(10, baseCount + change))
         
         data.push({
           time: current.valueOf(),
-          date: current.format('YYYY-MM-DD'),
+          date: current.format('YYYY-MM-DD HH:mm'),
           count: baseCount,
         })
-        current = current.add(1, dim as dayjs.ManipulateType)
+        current = current.add(2, 'minute')
       }
 
       return {

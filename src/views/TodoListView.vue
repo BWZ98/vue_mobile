@@ -1,21 +1,67 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useTodoStore } from '../stores/todo'
+import { ref, onMounted } from 'vue'
 import TodoItem from '../components/TodoItem.vue'
+import type { Todo } from '../types/todo'
+import { getTodosApi, addTodoApi, toggleTodoApi, deleteTodoApi } from '../api/todo'
 
-const todoStore = useTodoStore()
+const todos = ref<Todo[]>([])
 const newTodoContent = ref('')
+const loading = ref(false)
 
-onMounted(() => {
-  todoStore.fetchTodos()
-})
+// 移除了 goStats 方法，因其实际业务绑定在底部的 <router-link> 元素中生效
 
-const handleAdd = () => {
-  if (newTodoContent.value.trim()) {
-    todoStore.addTodo(newTodoContent.value.trim())
-    newTodoContent.value = ''
+// 获取待办列表
+const fetchTodos = async () => {
+  try {
+    loading.value = true
+    const res = await getTodosApi()
+    todos.value = res as unknown as Todo[]
+  } catch (error) {
+    console.warn('获取列表失败:', error)
+  } finally {
+    loading.value = false
   }
 }
+
+// 添加待办
+const handleAdd = async () => {
+  if (newTodoContent.value.trim()) {
+    try {
+      const newTodo = await addTodoApi(newTodoContent.value.trim())
+      todos.value.unshift(newTodo) // Add to the beginning
+      newTodoContent.value = ''
+    } catch (error) {
+      console.error('添加待办失败:', error)
+    }
+  }
+}
+
+// 切换待办状态
+const toggleTodo = async (id: string) => {
+  try {
+    const updatedTodo = await toggleTodoApi(id)
+    const index = todos.value.findIndex((todo: Todo) => todo.id === id)
+    if (index !== -1) {
+      todos.value[index] = updatedTodo
+    }
+  } catch (error) {
+    console.error('切换待办状态失败:', error)
+  }
+}
+
+// 删除待办
+const deleteTodo = async (id: string) => {
+  try {
+    await deleteTodoApi(id)
+    todos.value = todos.value.filter((todo: Todo) => todo.id !== id)
+  } catch (error) {
+    console.error('删除待办失败:', error)
+  }
+}
+
+onMounted(() => {
+  fetchTodos()
+})
 </script>
 
 <template>
@@ -44,22 +90,22 @@ const handleAdd = () => {
       </button>
     </div>
 
-    <div v-if="todoStore.loading" class="loading-state">
+    <div v-if="loading" class="loading-state">
       <div class="spinner"></div>
     </div>
 
     <div v-else class="todo-list">
       <TransitionGroup name="list">
         <TodoItem 
-          v-for="todo in todoStore.todos" 
+          v-for="todo in todos" 
           :key="todo.id" 
           :todo="todo" 
-          @toggle="todoStore.toggleTodo"
-          @delete="todoStore.deleteTodo"
+          @toggle="toggleTodo"
+          @delete="deleteTodo"
         />
       </TransitionGroup>
       
-      <div v-if="todoStore.todos.length === 0" class="empty-state">
+      <div v-if="todos.length === 0" class="empty-state">
         <p>No tasks yet. Enjoy your day!</p>
       </div> 
 

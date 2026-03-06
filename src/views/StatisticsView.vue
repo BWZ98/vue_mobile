@@ -2,47 +2,27 @@
 import { ref, onMounted, onUnmounted, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
-import dayjs from 'dayjs'
-import axios from 'axios'
+import { getStatsApi } from '../api/stats'
 
 const router = useRouter()
 const chartRef = ref<HTMLElement | null>(null)
 const chartInstance = shallowRef<echarts.ECharts | null>(null)
 const loading = ref(false)
 
-// 用于防抖
-let zoomTimeout: number | null = null
-
 const goBack = () => {
   router.push('/')
 }
 
-const fetchStatsData = async (startDate?: number, endDate?: number, dimension?: string) => {
+const fetchStatsData = async () => {
   try {
     loading.value = true
-    const params: Record<string, string | number> = {}
-    if (startDate) params.startDate = startDate
-    if (endDate) params.endDate = endDate
-    if (dimension) params.dimension = dimension
-
-    const response = await axios.get('/api/stats', { params })
-    return response.data.data
+    return await getStatsApi()
   } catch (error) {
-    console.error('获取统计数据失败:', error)
+    // 错误在 request.ts 中已被 Toast 提示，这里做个兜底就行
+    console.warn('获取统计数据组件内捕获失败:', error)
     return []
   } finally {
     loading.value = false
-  }
-}
-
-const getDimensionByRange = (start: number, end: number) => {
-  const diffDays = dayjs(end).diff(dayjs(start), 'day')
-  if (diffDays <= 31) {
-    return 'day'
-  } else if (diffDays <= 90) {
-    return 'week'
-  } else {
-    return 'month'
   }
 }
 
@@ -50,29 +30,36 @@ const initChart = async () => {
   if (!chartRef.value) return
   
   chartInstance.value = echarts.init(chartRef.value)
+
+  // 先行获取数据并格式化，带着数据统一完成初次渲染
+  // 防范：空数据时 Y 轴较窄 -> 有数据后 Y 轴标签被撑开从而挤压左侧引发整个图表在 X 轴向右位移跳闪。
+  const initialData = await fetchStatsData()
+  const formattedData = initialData.map((item: { time: number; count: number }) => [item.time, item.count])
   
   const option: echarts.EChartsOption = {
     grid: {
-      left: '10%',
+      top: 40,
+      left: '5%',
       right: '5%',
-      top: '10%',
-      bottom: '15%',
+      bottom: '10%',
+      containLabel: true,
     },
     tooltip: {
       trigger: 'axis',
-      axisPointer: {
-        type: 'cross',
-        label: {
-          backgroundColor: '#6a7985',
-        },
-      },
+      // 取消原本的 type: 'cross' 就不再在坐标轴显示具体的指示数值标签了
     },
     xAxis: {
       type: 'time',
       axisLine: {
         lineStyle: {
-          color: '#333',
+          color: 'rgba(0, 0, 0, 0.4)',
         },
+      },
+      axisLabel: {
+        color: 'rgba(0, 0, 0, 0.4)',
+        formatter: '{MM}-{dd}\n{HH}:{mm}',
+        hideOverlap: true,
+        fontSize: 12,
       },
       splitLine: {
         show: false,
@@ -80,12 +67,18 @@ const initChart = async () => {
     },
     yAxis: {
       type: 'value',
+      max(value) {
+        return Math.floor(value.max * 1.5)
+      },
       name: '完成数量',
-      axisLine: {
-        show: true,
-        lineStyle: {
-          color: '#333',
-        },
+      nameGap: 15,
+      nameTextStyle: {
+        color: 'rgba(0, 0, 0, 0.4)',
+        fontSize: 12,
+      },
+      axisLabel: {
+        color: 'rgba(0, 0, 0, 0.4)',
+        fontSize: 12,
       },
       splitLine: {
         lineStyle: {
@@ -98,85 +91,27 @@ const initChart = async () => {
       {
         type: 'inside', // 支持手势鼠标滑动缩放
         xAxisIndex: [0],
+        start: 90, // 默认显示最近10%的数据
+        end: 100,
       },
     ],
     series: [
       {
         name: '完成数',
         type: 'line',
-        showSymbol: false,
+        symbol: 'none', // 彻底禁止显示任何数据点（包括 hover 状态）
+        showSymbol: false, 
         smooth: true,
         lineStyle: {
-          color: '#5470c6',
+          color: '#3b82f6', // 蓝色加深一点点
           width: 2,
         },
-        areaStyle: {
-          color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
-            {
-              offset: 0,
-              color: 'rgba(84,112,198,0.5)',
-            },
-            {
-              offset: 1,
-              color: 'rgba(84,112,198,0.05)',
-            },
-          ]),
-        },
-        data: [],
+        data: formattedData,
       },
     ],
   }
   
   chartInstance.value.setOption(option)
-  
-  // 监听 dataZoom 事件
-  chartInstance.value.on('datazoom', () => {
-    if (zoomTimeout) {
-      clearTimeout(zoomTimeout)
-    }
-    zoomTimeout = window.setTimeout(() => {
-      if (!chartInstance.value) return
-        
-      // @ts-expect-error ECharts internal API
-      const model = chartInstance.value.getModel()
-      const axis = model.getComponent('xAxis', 0).axis
-      const extent = axis.scale.getExtent() // 返回 [min, max] 时间戳
-        
-      if (extent && extent.length === 2) {
-        handleZoomChange(extent[0], extent[1])
-      }
-    }, 500)
-  })
-
-  // 初始请求（1年数据，按月）
-  const now = dayjs()
-  const oneYearAgo = now.subtract(1, 'year')
-  const initialData = await fetchStatsData(oneYearAgo.valueOf(), now.valueOf(), 'month')
-  updateChartData(initialData)
-}
-
-const updateChartData = (data: { time: number; count: number }[]) => {
-  if (!chartInstance.value) return
-  const formattedData = data.map(item => [item.time, item.count])
-  chartInstance.value.setOption({
-    series: [{
-      data: formattedData,
-    }],
-  })
-}
-
-const handleZoomChange = async (start: number, end: number) => {
-  const dimension = getDimensionByRange(start, end)
-  
-  // 多请求一点边界外的数据，预留一定 Buffer 防止滑动白边
-  const margin = (end - start) * 0.2
-  const actualStart = start - margin
-  const actualEnd = end + margin
-
-  const data = await fetchStatsData(actualStart, actualEnd, dimension)
-  
-  // 只更新数据，以免打断当前缩放状态
-  updateChartData(data)
 }
 
 const handleResize = () => {
@@ -191,7 +126,6 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   chartInstance.value?.dispose()
-  if (zoomTimeout) clearTimeout(zoomTimeout)
 })
 </script>
 
@@ -275,14 +209,11 @@ onUnmounted(() => {
 
 .chart-container {
   width: 100%;
-  height: 60vh;
-  min-height: 400px;
+  aspect-ratio: 4 / 3; /* 更适合移动端的宽高比例 */
+  min-height: 280px;
   background: white;
   border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-  padding: 1rem;
   position: relative;
-  border: 1px solid #e4e4e7;
 }
 
 .echarts-dom {
