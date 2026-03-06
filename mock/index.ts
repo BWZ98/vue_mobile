@@ -117,24 +117,32 @@ export default [
   {
     url: '/api/stats',
     method: 'get',
-    response: () => {
+    response: ({ query }: { query: Record<string, string> }) => {
+      const range = query.range || '24h'
       const end = dayjs()
-      const start = end.subtract(30, 'day')
+      let start = end
+
+      if (range === '1h') {
+        start = end.subtract(1, 'hour')
+      } else if (range === '24h') {
+        start = end.subtract(24, 'hour')
+      } else if (range === '7d') {
+        start = end.subtract(7, 'day')
+      } else {
+        start = end.subtract(30, 'day')
+      }
 
       const data = []
       let current = start
-      
       let baseCount = 5
       
-      // 生成近 30 天，每 2 分钟一条的数据（约 21600 条数据）
       while (current.isBefore(end)) {
         const change = Math.floor(Math.random() * 5) - 2 // -2 到 +2 的变化
-        // 限制在 1-10 范围内
         baseCount = Math.max(1, Math.min(10, baseCount + change))
         
         data.push({
           time: current.valueOf(),
-          date: current.format('YYYY-MM-DD HH:mm'),
+          date: current.format('YYYY-MM-DD HH:mm:ss'),
           count: baseCount,
         })
         current = current.add(2, 'minute')

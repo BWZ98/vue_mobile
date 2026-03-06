@@ -11,11 +11,13 @@ export interface StatItem {
 
 /**
  * 获取统计数据
+ * @param range 时间范围筛选 (1h, 24h, 7d)
  * @returns 统计数据数组
  */
-export const getStatsApi = () => {
+export const getStatsApi = (range: string = '24h') => {
   return request<unknown, StatItem[]>({
     url: '/stats',
     method: 'get',
+    params: { range },
   })
 }
