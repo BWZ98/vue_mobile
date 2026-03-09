@@ -59,6 +59,7 @@ const initChart = async () => {
     const formattedData = rawData.map((item: { time: number; count: number }) => [item.time, item.count])
 
     const option: echarts.EChartsOption = {
+      animation: false,
       grid: {
         top: 40,
         left: '5%',
@@ -68,9 +69,11 @@ const initChart = async () => {
       },
       tooltip: {
         trigger: 'axis',
+        triggerOn: 'none',
       },
       xAxis: {
         type: 'time',
+        splitNumber: 2,
         axisLine: {
           lineStyle: {
             color: 'rgba(0, 0, 0, 0.4)',
@@ -133,6 +136,7 @@ const initChart = async () => {
           symbol: 'none',
           showSymbol: false,
           smooth: true,
+          sampling: 'lttb',
           lineStyle: {
             color: '#3b82f6',
             width: 2,
@@ -143,6 +147,55 @@ const initChart = async () => {
     }
 
     chartInstance.value.setOption(option)
+
+    // 长按显示 tooltip 逻辑
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null
+    let tooltipVisible = false
+    const LONG_PRESS_DURATION = 500
+
+    const clearTimer = () => {
+      if (longPressTimer) {
+        clearTimeout(longPressTimer)
+        longPressTimer = null
+      }
+    }
+
+    const hideTooltip = () => {
+      if (!tooltipVisible) return
+      chartInstance.value?.dispatchAction({ type: 'hideTip' })
+      chartInstance.value?.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' })
+      tooltipVisible = false
+    }
+
+    const zr = chartInstance.value.getZr()
+
+    zr.on('mousedown', (e: { offsetX: number; offsetY: number }) => {
+      // 如果已经显示了 tooltip，点击任意位置隐藏
+      if (tooltipVisible) {
+        hideTooltip()
+        return
+      }
+
+      const offsetX = e.offsetX
+      const offsetY = e.offsetY
+      clearTimer()
+      longPressTimer = setTimeout(() => {
+        chartInstance.value?.dispatchAction({
+          type: 'showTip',
+          x: offsetX,
+          y: offsetY,
+        })
+        tooltipVisible = true
+      }, LONG_PRESS_DURATION)
+    })
+
+    zr.on('mousemove', () => {
+      clearTimer()
+    })
+
+    zr.on('mouseup', () => {
+      clearTimer()
+    })
   } catch (error) {
     console.warn('获取统计数据失败:', error)
   } finally {
