@@ -10,154 +10,144 @@ const chartInstance = shallowRef<echarts.ECharts | null>(null)
 const loading = ref(false)
 
 // 当前选中的时间范围 tab
-const activeTab = ref('7d')
+const activeTab = ref('24h')
 const tabs = [
-  { label: '近1小时', value: '1h' },
+  { label: '近6小时', value: '6h' },
+  { label: '近12小时', value: '12h' },
   { label: '近24小时', value: '24h' },
-  { label: '近7天', value: '7d' },
 ]
+
+// tab value 对应的小时数
+const rangeHoursMap: Record<string, number> = { '6h': 6, '12h': 12, '24h': 24 }
 
 const goBack = () => {
   router.push('/')
 }
 
-const handleTabChange = async (val: string) => {
-  if (activeTab.value === val || loading.value) return
+// 根据当前 tab 计算 dataZoom 的 startValue（绝对时间戳）
+const getZoomStartValue = () => {
+  const hours = rangeHoursMap[activeTab.value] ?? 24
+  return Date.now() - hours * 3600 * 1000
+}
+
+const handleTabChange = (val: string) => {
+  if (activeTab.value === val) return
   activeTab.value = val
-  await reloadChartData()
+  applyZoom()
 }
 
-const fetchStatsData = async (range: string) => {
-  try {
-    loading.value = true
-    return await getStatsApi(range)
-  } catch (error) {
-    console.warn('获取统计数据组件内捕获失败:', error)
-    return []
-  } finally {
-    loading.value = false
-  }
-}
-
-const reloadChartData = async () => {
+// 仅调整可视区域，不重新请求数据
+const applyZoom = () => {
   if (!chartInstance.value) return
-  
-  // 获取新格式的数据
-  const newData = await fetchStatsData(activeTab.value)
-  const formattedData = newData.map((item: { time: number; count: number }) => [item.time, item.count])
-  
-  // 这里移除了之前硬编码的时间格式转换
-  // 以允许 ECharts 的 time 原轴利用其自身的算法展现最优时间分段
-  
   chartInstance.value.setOption({
-    dataZoom: [
-      {
-        xAxisIndex: [0],
-        start: 0,
-        end: 100, // 每次点击不同时间筛选项，重置缩放以容纳全新 100% 数据
-        minValueSpan: 3600 * 1000, // 最小放缩跨度为1小时（3600*1000ms）
-      },
-    ],
-    series: [{
-      data: formattedData,
+    dataZoom: [{
+      startValue: getZoomStartValue(),
+      endValue: Date.now(),
     }],
   })
 }
 
 const initChart = async () => {
   if (!chartRef.value) return
-  
+
   chartInstance.value = echarts.init(chartRef.value)
 
-  // 先行获取数据并格式化，带着数据统一完成初次渲染
-  const initialData = await fetchStatsData(activeTab.value)
-  const formattedData = initialData.map((item: { time: number; count: number }) => [item.time, item.count])
-  
-  const option: echarts.EChartsOption = {
-    grid: {
-      top: 40,
-      left: '5%',
-      right: '5%',
-      bottom: '10%',
-      containLabel: true,
-    },
-    tooltip: {
-      trigger: 'axis',
-      // 取消原本的 type: 'cross' 就不再在坐标轴显示具体的指示数值标签了
-    },
-    xAxis: {
-      type: 'time',
-      axisLine: {
-        lineStyle: {
+  // 始终请求 30 天数据
+  try {
+    loading.value = true
+    const rawData = await getStatsApi('30d')
+    const formattedData = rawData.map((item: { time: number; count: number }) => [item.time, item.count])
+
+    const option: echarts.EChartsOption = {
+      grid: {
+        top: 40,
+        left: '5%',
+        right: '5%',
+        bottom: '10%',
+        containLabel: true,
+      },
+      tooltip: {
+        trigger: 'axis',
+      },
+      xAxis: {
+        type: 'time',
+        axisLine: {
+          lineStyle: {
+            color: 'rgba(0, 0, 0, 0.4)',
+          },
+        },
+        axisLabel: {
           color: 'rgba(0, 0, 0, 0.4)',
+          formatter: function (value: number) {
+            const date = new Date(value)
+            const M = (date.getMonth() + 1).toString().padStart(2, '0')
+            const d = date.getDate().toString().padStart(2, '0')
+            const h = date.getHours().toString().padStart(2, '0')
+            const m = date.getMinutes().toString().padStart(2, '0')
+            return `${M}-${d}\n${h}:${m}`
+          },
+          hideOverlap: true,
+          fontSize: 12,
+        },
+        splitLine: {
+          show: false,
         },
       },
-      axisLabel: {
-        color: 'rgba(0, 0, 0, 0.4)',
-        formatter: function (value: number) {
-          const date = new Date(value)
-          const M = (date.getMonth() + 1).toString().padStart(2, '0')
-          const d = date.getDate().toString().padStart(2, '0')
-          const h = date.getHours().toString().padStart(2, '0')
-          const m = date.getMinutes().toString().padStart(2, '0')
-          return `${M}-${d}\n${h}:${m}`
+      yAxis: {
+        type: 'value',
+        max(value) {
+          return Math.floor(value.max * 1.5)
         },
-        hideOverlap: true,
-        fontSize: 12,
-      },
-      splitLine: {
-        show: false,
-      },
-    },
-    yAxis: {
-      type: 'value',
-      max(value) {
-        return Math.floor(value.max * 1.5)
-      },
-      name: '完成数量',
-      nameGap: 15,
-      nameTextStyle: {
-        color: 'rgba(0, 0, 0, 0.4)',
-        fontSize: 12,
-      },
-      axisLabel: {
-        color: 'rgba(0, 0, 0, 0.4)',
-        fontSize: 12,
-      },
-      splitLine: {
-        lineStyle: {
-          type: 'dashed',
-          color: '#eee',
+        name: '完成数量',
+        nameGap: 15,
+        nameTextStyle: {
+          color: 'rgba(0, 0, 0, 0.4)',
+          fontSize: 12,
+        },
+        axisLabel: {
+          color: 'rgba(0, 0, 0, 0.4)',
+          fontSize: 12,
+        },
+        splitLine: {
+          lineStyle: {
+            type: 'dashed',
+            color: '#eee',
+          },
         },
       },
-    },
-    dataZoom: [
-      {
-        type: 'inside', // 支持手势鼠标滑动缩放
-        filterMode: 'none',
-        minValueSpan: 3600 * 1000, // 最小放缩跨度为1小时
-        xAxisIndex: [0],
-        start: 0,
-        end: 100,
-      },
-    ],
-    series: [
-      {
-        name: '完成数',
-        type: 'line',
-        symbol: 'none', // 彻底禁止显示任何数据点（包括 hover 状态）
-        showSymbol: false, 
-        smooth: true,
-        lineStyle: {
-          color: '#3b82f6', // 蓝色加深一点点
-          width: 2,
+      dataZoom: [
+        {
+          type: 'inside',
+          filterMode: 'none',
+          minValueSpan: 3600 * 1000,
+          maxValueSpan: 24 * 3600 * 1000, // 一屏最多展示24小时
+          xAxisIndex: [0],
+          startValue: getZoomStartValue(),
+          endValue: Date.now(),
         },
-        data: formattedData,
-      },
-    ],
+      ],
+      series: [
+        {
+          name: '完成数',
+          type: 'line',
+          symbol: 'none',
+          showSymbol: false,
+          smooth: true,
+          lineStyle: {
+            color: '#3b82f6',
+            width: 2,
+          },
+          data: formattedData,
+        },
+      ],
+    }
+
+    chartInstance.value.setOption(option)
+  } catch (error) {
+    console.warn('获取统计数据失败:', error)
+  } finally {
+    loading.value = false
   }
-  
-  chartInstance.value.setOption(option)
 }
 
 const handleResize = () => {

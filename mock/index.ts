@@ -122,12 +122,12 @@ export default [
       const end = dayjs()
       let start = end
 
-      if (range === '1h') {
-        start = end.subtract(1, 'hour')
+      if (range === '6h') {
+        start = end.subtract(6, 'hour')
+      } else if (range === '12h') {
+        start = end.subtract(12, 'hour')
       } else if (range === '24h') {
         start = end.subtract(24, 'hour')
-      } else if (range === '7d') {
-        start = end.subtract(7, 'day')
       } else {
         start = end.subtract(30, 'day')
       }
