@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, shallowRef } from 'vue'
+import { ref, computed, onMounted, onUnmounted, shallowRef } from 'vue'
 import { useRouter } from 'vue-router'
 import * as echarts from 'echarts'
+import { Calendar as VanCalendar } from 'vant'
+import 'vant/es/calendar/style'
 import { getStatsApi } from '../api/stats'
 
 const router = useRouter()
@@ -33,7 +35,42 @@ const getZoomStartValue = () => {
 const handleTabChange = (val: string) => {
   if (activeTab.value === val) return
   activeTab.value = val
+  selectedDate.value = null
   applyZoom()
+}
+
+// 日历相关
+const showCalendar = ref(false)
+const selectedDate = ref<Date | null>(null)
+
+const calendarMinDate = computed(() => {
+  const d = new Date()
+  d.setDate(d.getDate() - 29)
+  d.setHours(0, 0, 0, 0)
+  return d
+})
+const calendarMaxDate = computed(() => new Date())
+
+const toggleCalendar = () => {
+  showCalendar.value = !showCalendar.value
+}
+
+const handleDateSelect = (date: Date) => {
+  selectedDate.value = date
+  showCalendar.value = false
+  activeTab.value = '' // 清除 tab 激活态
+  // 缩放到选中日期的 00:00 ~ 23:59:59
+  if (!chartInstance.value) return
+  const start = new Date(date)
+  start.setHours(0, 0, 0, 0)
+  const end = new Date(date)
+  end.setHours(23, 59, 59, 999)
+  chartInstance.value.setOption({
+    dataZoom: [{
+      startValue: start.getTime(),
+      endValue: end.getTime(),
+    }],
+  })
 }
 
 // 仅调整可视区域，不重新请求数据
@@ -230,17 +267,38 @@ onUnmounted(() => {
       <div class="placeholder"></div>
     </div>
     
-    <div class="filter-tabs">
-      <button 
-        v-for="tab in tabs" 
-        :key="tab.value"
-        class="tab-btn"
-        :class="{ active: activeTab === tab.value }"
-        @click="handleTabChange(tab.value)"
-      >
-        {{ tab.label }}
+    <div class="filter-row">
+      <div class="filter-tabs">
+        <button 
+          v-for="tab in tabs" 
+          :key="tab.value"
+          class="tab-btn"
+          :class="{ active: activeTab === tab.value }"
+          @click="handleTabChange(tab.value)"
+        >
+          {{ tab.label }}
+        </button>
+      </div>
+      <button class="calendar-btn" :class="{ active: selectedDate }" @click="toggleCalendar">
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
+        </svg>
       </button>
     </div>
+
+    <VanCalendar
+      v-model:show="showCalendar"
+      switch-mode="month"
+      :min-date="calendarMinDate"
+      :max-date="calendarMaxDate"
+      :default-date="selectedDate || calendarMaxDate"
+      position="bottom"
+      :round="true"
+      :show-confirm="false"
+      :safe-area-inset-bottom="false"
+      color="#3b82f6"
+      @select="handleDateSelect"
+    />
 
     <div class="chart-container">
       <div v-if="loading" class="loading-overlay">
@@ -308,12 +366,44 @@ onUnmounted(() => {
   width: 42px;
 }
 
+.filter-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 1.5rem;
+}
+
 .filter-tabs {
+  flex: 1;
   display: flex;
   background-color: #f4f4f5;
   border-radius: 12px;
   padding: 4px;
-  margin-bottom: 1.5rem;
+}
+
+.calendar-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  border: none;
+  background: #f4f4f5;
+  color: #71717a;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.calendar-btn.active {
+  background: #3b82f6;
+  color: white;
+}
+
+.calendar-btn svg {
+  width: 20px;
+  height: 20px;
 }
 
 .tab-btn {
@@ -374,5 +464,15 @@ onUnmounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+/* Vant Calendar 选中样式覆写 */
+:deep(.van-calendar__selected-day) {
+  background: transparent !important;
+  width: 32px !important;
+  height: 32px !important;
+  border-radius: 50%;
+  border: 2px solid #3b82f6;
+  color: #3b82f6 !important;
 }
 </style>
