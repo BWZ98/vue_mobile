@@ -11,4 +11,8 @@ export default defineConfig(({ command }) => ({
       enable: command === 'serve',
     }),
   ],
+  server: {
+    port: 3000,
+    host: true,
+  },
 }))

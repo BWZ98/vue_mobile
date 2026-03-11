@@ -87,6 +87,9 @@ const applyZoom = () => {
 const initChart = async () => {
   if (!chartRef.value) return
 
+  const MIN_SPAN = 3600 * 1000
+  const MAX_SPAN = 24 * 3600 * 1000
+
   chartInstance.value = echarts.init(chartRef.value)
 
   // 始终请求 30 天数据
@@ -107,6 +110,16 @@ const initChart = async () => {
       tooltip: {
         trigger: 'axis',
         triggerOn: 'none',
+        axisPointer: {
+          type: 'line',
+          lineStyle: {
+            color: '#489DF7',
+            type: 'dashed',
+          },
+          label: {
+            show: false,
+          },
+        },
       },
       xAxis: {
         type: 'time',
@@ -159,8 +172,8 @@ const initChart = async () => {
         {
           type: 'inside',
           filterMode: 'none',
-          minValueSpan: 3600 * 1000,
-          maxValueSpan: 24 * 3600 * 1000, // 一屏最多展示24小时
+          minValueSpan: MIN_SPAN,
+          maxValueSpan: MAX_SPAN,
           xAxisIndex: [0],
           startValue: getZoomStartValue(),
           endValue: Date.now(),
@@ -185,53 +198,153 @@ const initChart = async () => {
 
     chartInstance.value.setOption(option)
 
-    // 长按显示 tooltip 逻辑
-    let longPressTimer: ReturnType<typeof setTimeout> | null = null
-    let tooltipVisible = false
-    const LONG_PRESS_DURATION = 500
-
-    const clearTimer = () => {
-      if (longPressTimer) {
-        clearTimeout(longPressTimer)
-        longPressTimer = null
-      }
-    }
-
-    const hideTooltip = () => {
-      if (!tooltipVisible) return
-      chartInstance.value?.dispatchAction({ type: 'hideTip' })
-      chartInstance.value?.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' })
-      tooltipVisible = false
-    }
-
+    const chartEl = chartRef.value!
     const zr = chartInstance.value.getZr()
 
-    zr.on('mousedown', (e: { offsetX: number; offsetY: number }) => {
-      // 如果已经显示了 tooltip，点击任意位置隐藏
-      if (tooltipVisible) {
-        hideTooltip()
-        return
-      }
+    // ─── 工具函数 ────────────────────────────────────────────
+    type DzRange = { startValue: number; endValue: number }
+    const getDzRange = () =>
+      (chartInstance.value!.getOption().dataZoom as DzRange[])?.[0]
 
-      const offsetX = e.offsetX
-      const offsetY = e.offsetY
+    const restoreZoom = (start: number, end: number) => {
+      isRestoring = true
+      chartInstance.value!.dispatchAction({
+        type: 'dataZoom', dataZoomIndex: 0,
+        startValue: start, endValue: end,
+      })
+      isRestoring = false
+    }
+
+    // 标记位：防止 dispatchAction 触发 dataZoom 事件形成递归
+    let isRestoring = false
+
+    // ─── 功能1：双指检测 ──────────────────────────────────────
+    // 通过 PointerEvent 跟踪当前触点数来判断是否处于双指操作
+    // （不使用 touch 事件，避免与 ECharts 内部手势处理冲突）
+    let isPinching = false
+    const activePointers = new Set<number>()
+    const updatePinching = () => { isPinching = activePointers.size >= 2 }
+
+    for (const evt of ['pointerdown', 'pointerup', 'pointercancel'] as const) {
+      chartEl.addEventListener(evt, (e) => {
+        if (evt === 'pointerdown') {
+          activePointers.add(e.pointerId)
+        } else {
+          activePointers.delete(e.pointerId)
+        }
+        updatePinching()
+      }, { capture: true, passive: true })
+    }
+
+    // ─── 功能2：缩放极限保护 ──────────────────────────────────
+    // 问题：ECharts 内部 sliderMove 在钳制 minSpan/maxSpan 时，
+    //       会将缩放中心偏移转化为位移，导致 span 不变但位置平移。
+    // 方案：在 dataZoom 回调中检测到极限状态且 span 未变时，撤销位移。
+    let currentSpan = 0
+    let prevStartValue = 0
+    let prevEndValue = 0
+    const SPAN_EPSILON = MIN_SPAN * 0.01
+
+    const initDz = getDzRange()
+    if (initDz) {
+      currentSpan = initDz.endValue - initDz.startValue
+      prevStartValue = initDz.startValue
+      prevEndValue = initDz.endValue
+    }
+
+    // 滚轮极限保护：到达极限方向时直接拦截，阻止事件到达 ECharts
+    chartEl.addEventListener('wheel', (e) => {
+      // deltaY < 0 = 向上滚 = 放大(span变小)，deltaY > 0 = 向下滚 = 缩小(span变大)
+      if ((e.deltaY < 0 && currentSpan <= MIN_SPAN) || (e.deltaY > 0 && currentSpan >= MAX_SPAN)) {
+        e.preventDefault()
+        e.stopImmediatePropagation()
+      }
+    }, { capture: true })
+
+    // ─── 功能3：长按参考线 ──────────────────────────────────
+    // 长按 500ms 后进入参考线模式：显示竖线 + tooltip，手指拖动时跟随
+    // 期间抑制 dataZoom 平移，使图表保持静止
+    const LONG_PRESS_DURATION = 500
+    const MOVE_THRESHOLD = 10 // px 死区，容忍手指微抖
+    let longPressTimer: ReturnType<typeof setTimeout> | null = null
+    let crosshairActive = false
+    let startX = 0
+    let startY = 0
+    let suppressPan = false
+    let savedZoomStart = 0
+    let savedZoomEnd = 0
+
+    const clearTimer = () => {
+      if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
+    }
+    const showCrosshair = (x: number, y: number) => {
+      chartInstance.value?.dispatchAction({ type: 'showTip', x, y })
+    }
+    const hideCrosshair = () => {
+      if (!crosshairActive) return
+      crosshairActive = false
+      setTimeout(() => {
+        if (crosshairActive) return // 延迟期间又触发了长按，取消隐藏
+        chartInstance.value?.dispatchAction({ type: 'hideTip' })
+        chartInstance.value?.dispatchAction({ type: 'updateAxisPointer', currTrigger: 'leave' })
+      }, 500)
+    }
+
+    zr.on('mousedown', (e: { offsetX: number; offsetY: number }) => {
+      startX = e.offsetX
+      startY = e.offsetY
+      // 记录按下时的 dataZoom 位置，用于长按期间撤销平移
+      const dz = getDzRange()
+      if (dz) { savedZoomStart = dz.startValue; savedZoomEnd = dz.endValue }
+      suppressPan = true
       clearTimer()
       longPressTimer = setTimeout(() => {
-        chartInstance.value?.dispatchAction({
-          type: 'showTip',
-          x: offsetX,
-          y: offsetY,
-        })
-        tooltipVisible = true
+        crosshairActive = true
+        showCrosshair(e.offsetX, e.offsetY)
       }, LONG_PRESS_DURATION)
     })
 
-    zr.on('mousemove', () => {
-      clearTimer()
+    zr.on('mousemove', (e: { offsetX: number; offsetY: number }) => {
+      if (crosshairActive) {
+        showCrosshair(e.offsetX, e.offsetY)
+      } else {
+        const dx = e.offsetX - startX, dy = e.offsetY - startY
+        if (dx * dx + dy * dy > MOVE_THRESHOLD * MOVE_THRESHOLD) {
+          clearTimer()
+          suppressPan = false // 判定为滑动，停止撤销，dataZoom 正常工作
+        }
+      }
     })
 
-    zr.on('mouseup', () => {
-      clearTimer()
+    zr.on('mouseup', () => { clearTimer(); hideCrosshair(); suppressPan = false })
+
+    // ─── dataZoom 统一回调 ───────────────────────────────────
+    // 汇总处理上述功能的 dataZoom 拦截逻辑
+    chartInstance.value.on('dataZoom', () => {
+      const dz = getDzRange()
+      if (!dz || isRestoring) return
+
+      // 长按参考线期间：撤销一切位置变化，保持图表静止
+      if (suppressPan) {
+        restoreZoom(savedZoomStart, savedZoomEnd)
+        return
+      }
+
+      // 双指缩放极限：span 到达边界且未实质缩放时，撤销位移
+      if (isPinching) {
+        const newSpan = dz.endValue - dz.startValue
+        const atLimit = newSpan <= MIN_SPAN + SPAN_EPSILON || newSpan >= MAX_SPAN - SPAN_EPSILON
+        const spanUnchanged = Math.abs(newSpan - currentSpan) < SPAN_EPSILON
+        if (atLimit && spanUnchanged && (dz.startValue !== prevStartValue || dz.endValue !== prevEndValue)) {
+          restoreZoom(prevStartValue, prevEndValue)
+          return
+        }
+      }
+
+      // 正常更新跟踪值
+      currentSpan = dz.endValue - dz.startValue
+      prevStartValue = dz.startValue
+      prevEndValue = dz.endValue
     })
   } catch (error) {
     console.warn('获取统计数据失败:', error)
