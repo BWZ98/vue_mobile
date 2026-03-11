@@ -22,6 +22,8 @@ const tabs = [
 // tab value 对应的小时数
 const rangeHoursMap: Record<string, number> = { '6h': 6, '12h': 12, '24h': 24 }
 
+let globalUpdateLabels: (() => void) | null = null
+
 const goBack = () => {
   router.push('/')
 }
@@ -71,6 +73,7 @@ const handleDateSelect = (date: Date) => {
       endValue: end.getTime(),
     }],
   })
+  setTimeout(() => globalUpdateLabels?.(), 0)
 }
 
 // 仅调整可视区域，不重新请求数据
@@ -82,6 +85,7 @@ const applyZoom = () => {
       endValue: Date.now(),
     }],
   })
+  setTimeout(() => globalUpdateLabels?.(), 0)
 }
 
 const initChart = async () => {
@@ -129,17 +133,15 @@ const initChart = async () => {
             color: 'rgba(0, 0, 0, 0.4)',
           },
         },
+        axisTick: {
+          show: false,
+        },
         axisLabel: {
-          color: 'rgba(0, 0, 0, 0.4)',
-          formatter: function (value: number) {
-            const date = new Date(value)
-            const M = (date.getMonth() + 1).toString().padStart(2, '0')
-            const d = date.getDate().toString().padStart(2, '0')
-            const h = date.getHours().toString().padStart(2, '0')
-            const m = date.getMinutes().toString().padStart(2, '0')
-            return `${M}-${d}\n${h}:${m}`
+          color: 'transparent',
+          formatter: function () {
+            return '00-00\n00:00'
           },
-          hideOverlap: true,
+          hideOverlap: false,
           fontSize: 12,
         },
         splitLine: {
@@ -206,6 +208,94 @@ const initChart = async () => {
     const getDzRange = () =>
       (chartInstance.value!.getOption().dataZoom as DzRange[])?.[0]
 
+    const updateCustomLabels = () => {
+      const dz = getDzRange()
+      if (!dz) return
+      const startVal = dz.startValue
+      const endVal = dz.endValue
+      const midVal = (startVal + endVal) / 2
+      
+      const formatTime = (v: number) => {
+        const date = new Date(v)
+        const M = (date.getMonth() + 1).toString().padStart(2, '0')
+        const d = date.getDate().toString().padStart(2, '0')
+        const h = date.getHours().toString().padStart(2, '0')
+        const m = date.getMinutes().toString().padStart(2, '0')
+        return `${M}-${d}\n${h}:${m}`
+      }
+
+      const inst = chartInstance.value!
+      const leftPixel = inst.convertToPixel({ xAxisIndex: 0 }, startVal)
+      const midPixel = inst.convertToPixel({ xAxisIndex: 0 }, midVal)
+      const rightPixel = inst.convertToPixel({ xAxisIndex: 0 }, endVal)
+
+      // @ts-expect-error getModel is private but needed for custom coordinate calculation
+      const component = inst.getModel().getComponent('grid')
+      if (!component) return
+      const coordSys = component.coordinateSystem
+      if (!coordSys) return
+      const grid = coordSys.getRect()
+      const yPos = grid.y + grid.height + 8
+      const tickY1 = grid.y + grid.height
+      const tickY2 = grid.y + grid.height + 4 // 刻度线长度 4px
+
+      inst.setOption({
+        graphic: [
+          {
+            type: 'line',
+            id: 'tick_left',
+            shape: { x1: leftPixel, y1: tickY1, x2: leftPixel, y2: tickY2 },
+            style: { stroke: 'rgba(0, 0, 0, 0.4)', lineWidth: 1 },
+            z: 100,
+          },
+          {
+            type: 'line',
+            id: 'tick_mid',
+            shape: { x1: midPixel, y1: tickY1, x2: midPixel, y2: tickY2 },
+            style: { stroke: 'rgba(0, 0, 0, 0.4)', lineWidth: 1 },
+            z: 100,
+          },
+          {
+            type: 'line',
+            id: 'tick_right',
+            shape: { x1: rightPixel, y1: tickY1, x2: rightPixel, y2: tickY2 },
+            style: { stroke: 'rgba(0, 0, 0, 0.4)', lineWidth: 1 },
+            z: 100,
+          },
+          {
+            type: 'text',
+            id: 'label_left',
+            x: leftPixel,
+            y: yPos,
+            style: { text: formatTime(startVal), fill: 'rgba(0, 0, 0, 0.4)', fontSize: 12, textAlign: 'center' },
+            z: 100,
+          },
+          {
+            type: 'text',
+            id: 'label_mid',
+            x: midPixel,
+            y: yPos,
+            style: { text: formatTime(midVal), fill: 'rgba(0, 0, 0, 0.4)', fontSize: 12, textAlign: 'center' },
+            z: 100,
+          },
+          {
+            type: 'text',
+            id: 'label_right',
+            x: rightPixel,
+            y: yPos,
+            style: { text: formatTime(endVal), fill: 'rgba(0, 0, 0, 0.4)', fontSize: 12, textAlign: 'center' },
+            z: 100,
+          },
+        ],
+      })
+    }
+    globalUpdateLabels = updateCustomLabels
+
+    // 初始化后立刻渲染一次标签
+    setTimeout(() => {
+      updateCustomLabels()
+    }, 0)
+
     const restoreZoom = (start: number, end: number) => {
       isRestoring = true
       chartInstance.value!.dispatchAction({
@@ -213,6 +303,7 @@ const initChart = async () => {
         startValue: start, endValue: end,
       })
       isRestoring = false
+      setTimeout(() => updateCustomLabels(), 0)
     }
 
     // 标记位：防止 dispatchAction 触发 dataZoom 事件形成递归
@@ -345,6 +436,8 @@ const initChart = async () => {
       currentSpan = dz.endValue - dz.startValue
       prevStartValue = dz.startValue
       prevEndValue = dz.endValue
+
+      updateCustomLabels()
     })
   } catch (error) {
     console.warn('获取统计数据失败:', error)
@@ -355,6 +448,7 @@ const initChart = async () => {
 
 const handleResize = () => {
   chartInstance.value?.resize()
+  globalUpdateLabels?.()
 }
 
 onMounted(() => {
