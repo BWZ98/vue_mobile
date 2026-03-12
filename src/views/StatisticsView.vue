@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, shallowRef } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { Calendar as VanCalendar } from 'vant'
 import 'vant/es/calendar/style'
 import { getStatsApi } from '../api/stats'
 
 const router = useRouter()
+const route = useRoute()
 const chartRef = ref<HTMLElement | null>(null)
 const chartInstance = shallowRef<echarts.ECharts | null>(null)
 const loading = ref(false)
@@ -188,7 +189,7 @@ const initChart = async () => {
           symbol: 'none',
           showSymbol: false,
           smooth: true,
-          sampling: 'lttb',
+          // sampling: 'lttb',
           lineStyle: {
             color: '#3b82f6',
             width: 2,
@@ -439,6 +440,38 @@ const initChart = async () => {
 
       updateCustomLabels()
     })
+
+    // ─── 功能4：处理 URL timestamp ──────────────────────────────
+    const targetTimestampStr = route.query.timestamp as string
+    if (targetTimestampStr) {
+      const targetTime = Number(targetTimestampStr)
+      if (!isNaN(targetTime)) {
+        const dataIndex = formattedData.findIndex((d: number[]) => d[0] === targetTime)
+        if (dataIndex !== -1) {
+          activeTab.value = '' // 清除 tab 选中状态
+          const halfSpan = 3 * 3600 * 1000 // 中心各延伸 3 小时，总计 6 小时
+          
+          const onRendered = () => {
+            chartInstance.value!.off('rendered', onRendered)
+            chartInstance.value!.dispatchAction({
+              type: 'showTip',
+              seriesIndex: 0,
+              dataIndex: dataIndex,
+            })
+            crosshairActive = true // 激活十字线状态以便后续交互可正常隐藏
+          }
+          
+          chartInstance.value!.on('rendered', onRendered)
+
+          chartInstance.value!.dispatchAction({
+            type: 'dataZoom',
+            dataZoomIndex: 0,
+            startValue: targetTime - halfSpan,
+            endValue: targetTime + halfSpan,
+          })
+        }
+      }
+    }
   } catch (error) {
     console.warn('获取统计数据失败:', error)
   } finally {

@@ -149,6 +149,18 @@ export default [
         // current = current.add(10, 'minute')
       }
 
+      // 插入一个测试用的调试时间点：3/12 零点
+      const debugTimeStr = '2026-03-12 00:00:00'
+      const debugTime = dayjs(debugTimeStr).valueOf()
+      if (!data.find(d => d.time === debugTime)) {
+        data.push({
+          time: debugTime,
+          date: debugTimeStr,
+          count: 8,
+        })
+        data.sort((a, b) => a.time - b.time)
+      }
+
       return {
         code: 200,
         message: 'Success',
