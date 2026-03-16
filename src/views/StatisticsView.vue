@@ -12,6 +12,13 @@ const chartRef = ref<HTMLElement | null>(null)
 const chartInstance = shallowRef<echarts.ECharts | null>(null)
 const loading = ref(false)
 
+const axisLayout = ref({ tickY1: 0, tickY2: 0, labelY: 0 })
+const axisLabels = ref({
+  left: { x: -100, text: '' },
+  mid: { x: -100, text: '' },
+  right: { x: -100, text: '' },
+})
+
 // 当前选中的时间范围 tab
 const activeTab = ref('24h')
 const tabs = [
@@ -188,8 +195,8 @@ const initChart = async () => {
           type: 'line',
           symbol: 'none',
           showSymbol: false,
-          smooth: true,
-          // sampling: 'lttb',
+          smooth: false,
+          // sampling: 'lttb', // 不能降采样，以支持任意点上的长按Tooltip
           lineStyle: {
             color: '#3b82f6',
             width: 2,
@@ -209,85 +216,44 @@ const initChart = async () => {
     const getDzRange = () =>
       (chartInstance.value!.getOption().dataZoom as DzRange[])?.[0]
 
+    let labelUpdateRaf: number | null = null
     const updateCustomLabels = () => {
-      const dz = getDzRange()
-      if (!dz) return
-      const startVal = dz.startValue
-      const endVal = dz.endValue
-      const midVal = (startVal + endVal) / 2
-      
-      const formatTime = (v: number) => {
-        const date = new Date(v)
-        const M = (date.getMonth() + 1).toString().padStart(2, '0')
-        const d = date.getDate().toString().padStart(2, '0')
-        const h = date.getHours().toString().padStart(2, '0')
-        const m = date.getMinutes().toString().padStart(2, '0')
-        return `${M}-${d}\n${h}:${m}`
-      }
+      if (labelUpdateRaf !== null) cancelAnimationFrame(labelUpdateRaf)
+      labelUpdateRaf = requestAnimationFrame(() => {
+        const dz = getDzRange()
+        if (!dz) return
+        const startVal = dz.startValue
+        const endVal = dz.endValue
+        const midVal = (startVal + endVal) / 2
+        
+        const formatTime = (v: number) => {
+          const date = new Date(v)
+          const M = (date.getMonth() + 1).toString().padStart(2, '0')
+          const d = date.getDate().toString().padStart(2, '0')
+          const h = date.getHours().toString().padStart(2, '0')
+          const m = date.getMinutes().toString().padStart(2, '0')
+          return `${M}-${d}\n${h}:${m}`
+        }
 
-      const inst = chartInstance.value!
-      const leftPixel = inst.convertToPixel({ xAxisIndex: 0 }, startVal)
-      const midPixel = inst.convertToPixel({ xAxisIndex: 0 }, midVal)
-      const rightPixel = inst.convertToPixel({ xAxisIndex: 0 }, endVal)
+        const inst = chartInstance.value!
+        const leftPixel = inst.convertToPixel({ xAxisIndex: 0 }, startVal)
+        const midPixel = inst.convertToPixel({ xAxisIndex: 0 }, midVal)
+        const rightPixel = inst.convertToPixel({ xAxisIndex: 0 }, endVal)
 
-      // @ts-expect-error getModel is private but needed for custom coordinate calculation
-      const component = inst.getModel().getComponent('grid')
-      if (!component) return
-      const coordSys = component.coordinateSystem
-      if (!coordSys) return
-      const grid = coordSys.getRect()
-      const yPos = grid.y + grid.height + 8
-      const tickY1 = grid.y + grid.height
-      const tickY2 = grid.y + grid.height + 4 // 刻度线长度 4px
-
-      inst.setOption({
-        graphic: [
-          {
-            type: 'line',
-            id: 'tick_left',
-            shape: { x1: leftPixel, y1: tickY1, x2: leftPixel, y2: tickY2 },
-            style: { stroke: 'rgba(0, 0, 0, 0.4)', lineWidth: 1 },
-            z: 100,
-          },
-          {
-            type: 'line',
-            id: 'tick_mid',
-            shape: { x1: midPixel, y1: tickY1, x2: midPixel, y2: tickY2 },
-            style: { stroke: 'rgba(0, 0, 0, 0.4)', lineWidth: 1 },
-            z: 100,
-          },
-          {
-            type: 'line',
-            id: 'tick_right',
-            shape: { x1: rightPixel, y1: tickY1, x2: rightPixel, y2: tickY2 },
-            style: { stroke: 'rgba(0, 0, 0, 0.4)', lineWidth: 1 },
-            z: 100,
-          },
-          {
-            type: 'text',
-            id: 'label_left',
-            x: leftPixel,
-            y: yPos,
-            style: { text: formatTime(startVal), fill: 'rgba(0, 0, 0, 0.4)', fontSize: 12, textAlign: 'center' },
-            z: 100,
-          },
-          {
-            type: 'text',
-            id: 'label_mid',
-            x: midPixel,
-            y: yPos,
-            style: { text: formatTime(midVal), fill: 'rgba(0, 0, 0, 0.4)', fontSize: 12, textAlign: 'center' },
-            z: 100,
-          },
-          {
-            type: 'text',
-            id: 'label_right',
-            x: rightPixel,
-            y: yPos,
-            style: { text: formatTime(endVal), fill: 'rgba(0, 0, 0, 0.4)', fontSize: 12, textAlign: 'center' },
-            z: 100,
-          },
-        ],
+        // @ts-expect-error getModel is private but needed for custom coordinate calculation
+        const component = inst.getModel().getComponent('grid')
+        if (!component) return
+        const coordSys = component.coordinateSystem
+        if (!coordSys) return
+        const grid = coordSys.getRect()
+        
+        axisLayout.value.tickY1 = grid.y + grid.height
+        axisLayout.value.tickY2 = grid.y + grid.height + 4
+        axisLayout.value.labelY = grid.y + grid.height + 8
+        
+        axisLabels.value.left = { x: leftPixel, text: formatTime(startVal) }
+        axisLabels.value.mid = { x: midPixel, text: formatTime(midVal) }
+        axisLabels.value.right = { x: rightPixel, text: formatTime(endVal) }
       })
     }
     globalUpdateLabels = updateCustomLabels
@@ -545,6 +511,18 @@ onUnmounted(() => {
         <div class="spinner"></div>
       </div>
       <div ref="chartRef" class="echarts-dom"></div>
+      
+      <!-- Custom DOM Labels for better performance -->
+      <div v-show="axisLabels.left.text" class="custom-x-axis">
+        <!-- Ticks -->
+        <div class="axis-tick" :style="{ transform: `translate3d(${axisLabels.left.x}px, ${axisLayout.tickY1}px, 0)`, height: (axisLayout.tickY2 - axisLayout.tickY1) + 'px' }"></div>
+        <div class="axis-tick" :style="{ transform: `translate3d(${axisLabels.mid.x}px, ${axisLayout.tickY1}px, 0)`, height: (axisLayout.tickY2 - axisLayout.tickY1) + 'px' }"></div>
+        <div class="axis-tick" :style="{ transform: `translate3d(${axisLabels.right.x}px, ${axisLayout.tickY1}px, 0)`, height: (axisLayout.tickY2 - axisLayout.tickY1) + 'px' }"></div>
+        <!-- Labels -->
+        <div class="axis-label" :style="{ transform: `translate3d(calc(${axisLabels.left.x}px - 50%), ${axisLayout.labelY}px, 0)` }">{{ axisLabels.left.text }}</div>
+        <div class="axis-label" :style="{ transform: `translate3d(calc(${axisLabels.mid.x}px - 50%), ${axisLayout.labelY}px, 0)` }">{{ axisLabels.mid.text }}</div>
+        <div class="axis-label" :style="{ transform: `translate3d(calc(${axisLabels.right.x}px - 50%), ${axisLayout.labelY}px, 0)` }">{{ axisLabels.right.text }}</div>
+      </div>
     </div>
   </div>
 </template>
@@ -704,6 +682,38 @@ onUnmounted(() => {
 
 @keyframes spin {
   to { transform: rotate(360deg); }
+}
+
+.custom-x-axis {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.axis-tick {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  background-color: rgba(0, 0, 0, 0.4);
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.axis-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  color: rgba(0, 0, 0, 0.4);
+  font-size: 12px;
+  text-align: center;
+  white-space: pre-wrap;
+  line-height: 1.2;
+  will-change: transform;
 }
 
 /* Vant Calendar 选中样式覆写 */
