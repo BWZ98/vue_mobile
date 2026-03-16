@@ -145,11 +145,16 @@ const initChart = async () => {
         seriesList.push({
           name: name,
           type: 'line',
-          symbol: 'none',
+          symbol: 'circle',
+          symbolSize: 6,
           showSymbol: false,
           smooth: false,
           emphasis: { disabled: true },
           animation: false,
+          itemStyle: {
+            borderColor: '#fff',
+            borderWidth: 1,
+          },
           lineStyle: {
             color: colors[colorIndex % colors.length],
             width: 2,
@@ -163,11 +168,16 @@ const initChart = async () => {
       seriesList.push({
         name: '完成数',
         type: 'line',
-        symbol: 'none',
+        symbol: 'circle',
+        symbolSize: 6,
         showSymbol: false,
         smooth: false,
         emphasis: { disabled: true },
         animation: false,
+        itemStyle: {
+          borderColor: '#fff',
+          borderWidth: 1,
+        },
         lineStyle: {
           color: '#3b82f6',
           width: 2,
