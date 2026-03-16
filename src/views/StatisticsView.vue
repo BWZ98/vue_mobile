@@ -109,6 +109,11 @@ const initChart = async () => {
     loading.value = true
     const rawData = await getStatsApi('30d')
     
+    let globalMaxCount = 0
+    rawData.forEach(item => {
+      if (item.count > globalMaxCount) globalMaxCount = item.count
+    })
+
     // 判断是否包含多系列数据
     const isMultiSeries = rawData.length > 0 && typeof rawData[0]?.person !== 'undefined'
     
@@ -143,6 +148,8 @@ const initChart = async () => {
           symbol: 'none',
           showSymbol: false,
           smooth: false,
+          emphasis: { disabled: true },
+          animation: false,
           lineStyle: {
             color: colors[colorIndex % colors.length],
             width: 2,
@@ -159,6 +166,8 @@ const initChart = async () => {
         symbol: 'none',
         showSymbol: false,
         smooth: false,
+        emphasis: { disabled: true },
+        animation: false,
         lineStyle: {
           color: '#3b82f6',
           width: 2,
@@ -186,6 +195,7 @@ const initChart = async () => {
       tooltip: {
         trigger: 'axis',
         triggerOn: 'none',
+        transitionDuration: 0,
         axisPointer: {
           type: 'line',
           lineStyle: {
@@ -222,9 +232,7 @@ const initChart = async () => {
       },
       yAxis: {
         type: 'value',
-        max(value) {
-          return Math.floor(value.max * 1.5)
-        },
+        max: Math.floor(globalMaxCount * 1.5),
         name: '完成数量',
         nameGap: 15,
         nameTextStyle: {
@@ -245,7 +253,7 @@ const initChart = async () => {
       dataZoom: [
         {
           type: 'inside',
-          filterMode: 'none',
+          filterMode: 'filter',
           minValueSpan: MIN_SPAN,
           maxValueSpan: MAX_SPAN,
           xAxisIndex: [0],
