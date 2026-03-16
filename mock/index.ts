@@ -134,30 +134,28 @@ export default [
 
       const data = []
       let current = start
-      let baseCount = 5
+      let baseCount1 = 5
+      let baseCount2 = 10
+      let baseCount3 = 15
       
       while (current.isBefore(end)) {
-        const change = Math.floor(Math.random() * 5) - 2 // -2 到 +2 的变化
-        baseCount = Math.max(1, Math.min(10, baseCount + change))
+        baseCount1 = Math.max(1, Math.min(20, baseCount1 + Math.floor(Math.random() * 5) - 2))
+        baseCount2 = Math.max(1, Math.min(20, baseCount2 + Math.floor(Math.random() * 5) - 2))
+        baseCount3 = Math.max(1, Math.min(20, baseCount3 + Math.floor(Math.random() * 5) - 2))
         
-        data.push({
-          time: current.valueOf(),
-          date: current.format('YYYY-MM-DD HH:mm:ss'),
-          count: baseCount,
-        })
+        data.push({ time: current.valueOf(), person: 1, count: baseCount1 })
+        data.push({ time: current.valueOf(), person: 2, count: baseCount2 })
+        data.push({ time: current.valueOf(), person: 3, count: baseCount3 })
         current = current.add(2, 'minute')
-        // current = current.add(10, 'minute')
       }
 
       // 插入一个测试用的调试时间点：3/12 零点
       const debugTimeStr = '2026-03-12 00:00:00'
       const debugTime = dayjs(debugTimeStr).valueOf()
       if (!data.find(d => d.time === debugTime)) {
-        data.push({
-          time: debugTime,
-          date: debugTimeStr,
-          count: 8,
-        })
+        data.push({ time: debugTime, person: 1, count: 8 })
+        data.push({ time: debugTime, person: 2, count: 12 })
+        data.push({ time: debugTime, person: 3, count: 18 })
         data.sort((a, b) => a.time - b.time)
       }
 
@@ -168,4 +166,56 @@ export default [
       }
     },
   },
+  // {
+  //   url: '/api/stats',
+  //   method: 'get',
+  //   response: ({ query }: { query: Record<string, string> }) => {
+  //     const range = query.range || '24h'
+  //     const end = dayjs()
+  //     let start = end
+
+  //     if (range === '6h') {
+  //       start = end.subtract(6, 'hour')
+  //     } else if (range === '12h') {
+  //       start = end.subtract(12, 'hour')
+  //     } else if (range === '24h') {
+  //       start = end.subtract(24, 'hour')
+  //     } else {
+  //       start = end.subtract(30, 'day')
+  //     }
+
+  //     const data = []
+  //     let current = start
+  //     let baseCount = 5
+      
+  //     while (current.isBefore(end)) {
+  //       const change = Math.floor(Math.random() * 5) - 2 // -2 到 +2 的变化
+  //       baseCount = Math.max(1, Math.min(10, baseCount + change))
+        
+  //       data.push({
+  //         time: current.valueOf(),
+  //         count: baseCount,
+  //       })
+  //       current = current.add(2, 'minute')
+  //       // current = current.add(10, 'minute')
+  //     }
+
+  //     // 插入一个测试用的调试时间点：3/12 零点
+  //     const debugTimeStr = '2026-03-12 00:00:00'
+  //     const debugTime = dayjs(debugTimeStr).valueOf()
+  //     if (!data.find(d => d.time === debugTime)) {
+  //       data.push({
+  //         time: debugTime,
+  //         count: 8,
+  //       })
+  //       data.sort((a, b) => a.time - b.time)
+  //     }
+
+  //     return {
+  //       code: 200,
+  //       message: 'Success',
+  //       data,
+  //     }
+  //   },
+  // },
 ] as MockMethod[]

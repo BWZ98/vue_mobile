@@ -108,10 +108,74 @@ const initChart = async () => {
   try {
     loading.value = true
     const rawData = await getStatsApi('30d')
-    const formattedData = rawData.map((item: { time: number; count: number }) => [item.time, item.count])
+    
+    // 判断是否包含多系列数据
+    const isMultiSeries = rawData.length > 0 && typeof rawData[0]?.person !== 'undefined'
+    
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const seriesList: any[] = []
+    const legendData: string[] = []
+    
+    if (isMultiSeries) {
+      const groupedData = new Map<number, number[][]>()
+      const personNames = new Map<number, string>()
+      
+      rawData.forEach((item) => {
+        const personId = item.person as number
+        if (!groupedData.has(personId)) {
+          groupedData.set(personId, [])
+          personNames.set(personId, `系列${personId}`)
+        }
+        groupedData.get(personId)!.push([item.time, item.count])
+      })
+      
+      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+      let colorIndex = 0
+      
+      const sortedKeys = Array.from(groupedData.keys()).sort((a, b) => a - b)
+      
+      sortedKeys.forEach((personId) => {
+        const name = personNames.get(personId)!
+        legendData.push(name)
+        seriesList.push({
+          name: name,
+          type: 'line',
+          symbol: 'none',
+          showSymbol: false,
+          smooth: false,
+          lineStyle: {
+            color: colors[colorIndex % colors.length],
+            width: 2,
+          },
+          data: groupedData.get(personId)!,
+        })
+        colorIndex++
+      })
+    } else {
+      const singleData = rawData.map((item) => [item.time, item.count])
+      seriesList.push({
+        name: '完成数',
+        type: 'line',
+        symbol: 'none',
+        showSymbol: false,
+        smooth: false,
+        lineStyle: {
+          color: '#3b82f6',
+          width: 2,
+        },
+        data: singleData,
+      })
+    }
 
     const option: echarts.EChartsOption = {
       animation: false,
+      ...(isMultiSeries ? {
+        legend: {
+          data: legendData,
+          top: 0,
+          right: '5%',
+        },
+      } : {}),
       grid: {
         top: 40,
         left: '5%',
@@ -189,21 +253,7 @@ const initChart = async () => {
           endValue: Date.now(),
         },
       ],
-      series: [
-        {
-          name: '完成数',
-          type: 'line',
-          symbol: 'none',
-          showSymbol: false,
-          smooth: false,
-          // sampling: 'lttb', // 不能降采样，以支持任意点上的长按Tooltip
-          lineStyle: {
-            color: '#3b82f6',
-            width: 2,
-          },
-          data: formattedData,
-        },
-      ],
+      series: seriesList,
     }
 
     chartInstance.value.setOption(option)
@@ -412,7 +462,11 @@ const initChart = async () => {
     if (targetTimestampStr) {
       const targetTime = Number(targetTimestampStr)
       if (!isNaN(targetTime)) {
-        const dataIndex = formattedData.findIndex((d: number[]) => d[0] === targetTime)
+        let searchData: number[][] = []
+        if (seriesList.length > 0 && seriesList[0].data) {
+          searchData = seriesList[0].data
+        }
+        const dataIndex = searchData.findIndex((d: number[]) => d[0] === targetTime)
         if (dataIndex !== -1) {
           activeTab.value = '' // 清除 tab 选中状态
           const halfSpan = 3 * 3600 * 1000 // 中心各延伸 3 小时，总计 6 小时

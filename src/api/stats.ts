@@ -7,6 +7,7 @@ export interface StatItem {
   time: number
   date: string
   count: number
+  person: number
 }
 
 /**

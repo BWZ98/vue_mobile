@@ -1,0 +1,36 @@
+{
+    "code": 200,
+    "message": "Success",
+    "data": [
+        {
+            "time": 1771066408298,
+            "person": 1,
+            "count": 1
+        },
+        {
+            "time": 1771066408298,
+            "person": 2,
+            "count": 2
+        },
+        {
+            "time": 1771066408298,
+            "person": 3,
+            "count": 3
+        },
+        {
+            "time": 1771066528298,
+            "person": 1,
+            "count": 4
+        },
+        {
+            "time": 1771066528298,
+            "person": 2,
+            "count": 4
+        },
+        {
+            "time": 1771066528298,
+            "person": 3,
+            "count": 3
+        }
+    ]
+}
