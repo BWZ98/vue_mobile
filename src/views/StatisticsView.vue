@@ -391,14 +391,8 @@ const initChart = async () => {
     // 长按 500ms 后进入参考线模式：显示竖线 + tooltip，手指拖动时跟随
     // 期间抑制 dataZoom 平移，使图表保持静止
     const LONG_PRESS_DURATION = 500
-    const MOVE_THRESHOLD = 10 // px 死区，容忍手指微抖
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let crosshairActive = false
-    let startX = 0
-    let startY = 0
-    let suppressPan = false
-    let savedZoomStart = 0
-    let savedZoomEnd = 0
 
     const clearTimer = () => {
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
@@ -417,12 +411,6 @@ const initChart = async () => {
     }
 
     zr.on('mousedown', (e: { offsetX: number; offsetY: number }) => {
-      startX = e.offsetX
-      startY = e.offsetY
-      // 记录按下时的 dataZoom 位置，用于长按期间撤销平移
-      const dz = getDzRange()
-      if (dz) { savedZoomStart = dz.startValue; savedZoomEnd = dz.endValue }
-      suppressPan = true
       clearTimer()
       longPressTimer = setTimeout(() => {
         crosshairActive = true
@@ -430,31 +418,40 @@ const initChart = async () => {
       }, LONG_PRESS_DURATION)
     })
 
-    zr.on('mousemove', (e: { offsetX: number; offsetY: number }) => {
-      if (crosshairActive) {
-        showCrosshair(e.offsetX, e.offsetY)
-      } else {
-        const dx = e.offsetX - startX, dy = e.offsetY - startY
-        if (dx * dx + dy * dy > MOVE_THRESHOLD * MOVE_THRESHOLD) {
-          clearTimer()
-          suppressPan = false // 判定为滑动，停止撤销，dataZoom 正常工作
+    // ─── 核心优化：拦截移动事件，防止平移干扰 ──────────────
+    const handleMove = (e: MouseEvent | TouchEvent) => {
+      if (!crosshairActive) return
+      
+      // 拦截事件，阻止 ECharts 内部平移和浏览器滚动
+      e.stopImmediatePropagation()
+      if (e.cancelable) e.preventDefault()
+      
+      let x = 0, y = 0
+      if (e instanceof MouseEvent) {
+        x = e.offsetX
+        y = e.offsetY
+      } else if (e instanceof TouchEvent && e.touches.length > 0) {
+        const touch = e.touches[0]
+        if (touch) {
+          const rect = chartEl.getBoundingClientRect()
+          x = touch.clientX - rect.left
+          y = touch.clientY - rect.top
         }
       }
-    })
+      
+      showCrosshair(x, y)
+    }
 
-    zr.on('mouseup', () => { clearTimer(); hideCrosshair(); suppressPan = false })
+    chartEl.addEventListener('mousemove', handleMove, { capture: true })
+    chartEl.addEventListener('touchmove', handleMove, { capture: true, passive: false })
+
+    zr.on('mouseup', () => { clearTimer(); hideCrosshair() })
 
     // ─── dataZoom 统一回调 ───────────────────────────────────
     // 汇总处理上述功能的 dataZoom 拦截逻辑
     chartInstance.value.on('dataZoom', () => {
       const dz = getDzRange()
       if (!dz || isRestoring) return
-
-      // 长按参考线期间：撤销一切位置变化，保持图表静止
-      if (suppressPan) {
-        restoreZoom(savedZoomStart, savedZoomEnd)
-        return
-      }
 
       // 双指缩放极限：span 到达边界且未实质缩放时，撤销位移
       if (isPinching) {
