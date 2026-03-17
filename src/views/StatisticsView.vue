@@ -31,6 +31,7 @@ const tabs = [
 const rangeHoursMap: Record<string, number> = { '6h': 6, '12h': 12, '24h': 24 }
 
 let globalUpdateLabels: (() => void) | null = null
+let globalSyncZoomState: (() => void) | null = null
 
 const goBack = () => {
   router.push('/')
@@ -81,6 +82,7 @@ const handleDateSelect = (date: Date) => {
       endValue: end.getTime(),
     }],
   })
+  globalSyncZoomState?.()
   setTimeout(() => globalUpdateLabels?.(), 0)
 }
 
@@ -93,6 +95,7 @@ const applyZoom = () => {
       endValue: Date.now(),
     }],
   })
+  globalSyncZoomState?.()
   setTimeout(() => globalUpdateLabels?.(), 0)
 }
 
@@ -325,6 +328,13 @@ const initChart = async () => {
       })
     }
     globalUpdateLabels = updateCustomLabels
+    globalSyncZoomState = () => {
+      const dz = getDzRange()
+      if (!dz) return
+      currentSpan = dz.endValue - dz.startValue
+      prevStartValue = dz.startValue
+      prevEndValue = dz.endValue
+    }
 
     // 初始化后立刻渲染一次标签
     setTimeout(() => {
