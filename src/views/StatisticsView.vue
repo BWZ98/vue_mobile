@@ -345,22 +345,41 @@ const initChart = async () => {
     let isRestoring = false
 
     // ─── 功能1：双指检测 ──────────────────────────────────────
-    // 通过 PointerEvent 跟踪当前触点数来判断是否处于双指操作
-    // （不使用 touch 事件，避免与 ECharts 内部手势处理冲突）
+    // 使用 TouchEvent 实时捕获屏幕上的触点数量。
+    // 1. 开始缓冲：双指刚落下时在 dataZoom 回调里跳过前若干帧，防止手指落下瞬间的方向随机微颤干扰视图。
+    // 2. 结束防抖：两指变单指时延迟 300ms 退出双指状态，吸收先后抬起引起的中心点突变跳动。
     let isPinching = false
-    const activePointers = new Set<number>()
-    const updatePinching = () => { isPinching = activePointers.size >= 2 }
+    let unpinchTimer: ReturnType<typeof setTimeout> | null = null
+    let pinchSkipCount = 0            // 双指刚落下后需要跳过的 dataZoom 帧数
+    const PINCH_SKIP_FRAMES = 3       // 跳过前 3 帧，覆盖初始落指颤动（pointermove 频率很高，3帧约 50ms）
 
-    for (const evt of ['pointerdown', 'pointerup', 'pointercancel'] as const) {
-      chartEl.addEventListener(evt, (e) => {
-        if (evt === 'pointerdown') {
-          activePointers.add(e.pointerId)
-        } else {
-          activePointers.delete(e.pointerId)
+    const handleTouchStart = (e: TouchEvent) => {
+      if (e.touches.length >= 2) {
+        isPinching = true
+        pinchSkipCount = PINCH_SKIP_FRAMES
+        if (unpinchTimer) {
+          clearTimeout(unpinchTimer)
+          unpinchTimer = null
         }
-        updatePinching()
-      }, { capture: true, passive: true })
+      }
     }
+
+    const handleTouchEnd = (e: TouchEvent) => {
+      if (e.touches.length < 2) {
+        pinchSkipCount = 0
+        if (isPinching && !unpinchTimer) {
+          unpinchTimer = setTimeout(() => {
+            isPinching = false
+            unpinchTimer = null
+          }, 300)
+        }
+      }
+    }
+
+    // 绑定原生事件，启用捕获阶段确保准确截获，设为 passive 对性能无影响
+    chartEl.addEventListener('touchstart', handleTouchStart, { capture: true, passive: true })
+    chartEl.addEventListener('touchend', handleTouchEnd, { capture: true, passive: true })
+    chartEl.addEventListener('touchcancel', handleTouchEnd, { capture: true, passive: true })
 
     // ─── 功能2：缩放极限保护 ──────────────────────────────────
     // 问题：ECharts 内部 sliderMove 在钳制 minSpan/maxSpan 时，
@@ -469,8 +488,15 @@ const initChart = async () => {
       const dz = getDzRange()
       if (!dz || isRestoring) return
 
-      // 双指缩放极限：span 到达边界且未实质缩放时，撤销位移
       if (isPinching) {
+        // 开始缓冲：双指刚落下的前几帧一律还原，吸收落指颤动
+        if (pinchSkipCount > 0) {
+          pinchSkipCount--
+          restoreZoom(prevStartValue, prevEndValue)
+          return
+        }
+
+        // 缩放极限：span 到达边界且未实质缩放时，撤销位移
         const newSpan = dz.endValue - dz.startValue
         const atLimit = newSpan <= MIN_SPAN + SPAN_EPSILON || newSpan >= MAX_SPAN - SPAN_EPSILON
         const spanUnchanged = Math.abs(newSpan - currentSpan) < SPAN_EPSILON
