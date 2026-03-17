@@ -393,6 +393,8 @@ const initChart = async () => {
     const LONG_PRESS_DURATION = 500
     let longPressTimer: ReturnType<typeof setTimeout> | null = null
     let crosshairActive = false
+    let startX = 0
+    let startY = 0
 
     const clearTimer = () => {
       if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null }
@@ -412,10 +414,23 @@ const initChart = async () => {
 
     zr.on('mousedown', (e: { offsetX: number; offsetY: number }) => {
       clearTimer()
+      startX = e.offsetX
+      startY = e.offsetY
       longPressTimer = setTimeout(() => {
         crosshairActive = true
-        showCrosshair(e.offsetX, e.offsetY)
+        showCrosshair(startX, startY)
       }, LONG_PRESS_DURATION)
+    })
+
+    zr.on('mousemove', (e: { offsetX: number; offsetY: number }) => {
+      if (longPressTimer && !crosshairActive) {
+        const dx = e.offsetX - startX
+        const dy = e.offsetY - startY
+        // 移动超过 10 像素即视为拖动，取消长按定时器，优化性能避免大量计算
+        if (dx * dx + dy * dy > 100) {
+          clearTimer()
+        }
+      }
     })
 
     // ─── 核心优化：拦截移动事件，防止平移干扰 ──────────────
@@ -446,6 +461,7 @@ const initChart = async () => {
     chartEl.addEventListener('touchmove', handleMove, { capture: true, passive: false })
 
     zr.on('mouseup', () => { clearTimer(); hideCrosshair() })
+    zr.on('globalout', () => { clearTimer(); hideCrosshair() })
 
     // ─── dataZoom 统一回调 ───────────────────────────────────
     // 汇总处理上述功能的 dataZoom 拦截逻辑
