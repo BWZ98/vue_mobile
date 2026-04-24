@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import TodoItem from '../components/TodoItem.vue'
 import type { Todo } from '../types/todo'
 import { getTodosApi, addTodoApi, toggleTodoApi, deleteTodoApi } from '../api/todo'
+
+const router = useRouter()
+const goAuth = () => router.push('/auth')
 
 const todos = ref<Todo[]>([])
 const newTodoContent = ref('')
@@ -68,11 +72,11 @@ onMounted(() => {
   <div class="container page-enter">
     <div class="header-container">
       <h1 class="title">My Tasks</h1>
-      <router-link to="/stats" class="stats-btn">
-        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+      <button class="auth-entry-btn" @click="goAuth" id="auth-entry-btn" aria-label="登录 / 注册">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+          <path fill-rule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clip-rule="evenodd" />
         </svg>
-      </router-link>
+      </button>
     </div>
     
     <div class="input-group">
@@ -136,27 +140,31 @@ onMounted(() => {
   font-weight: bold;
 }
 
-.stats-btn {
+.auth-entry-btn {
   display: flex;
   align-items: center;
   justify-content: center;
   width: 42px;
   height: 42px;
-  border-radius: 8px;
-  background-color: transparent;
-  color: #3b82f6;
-  transition: all 0.2s ease;
-  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(109,40,217,0.1));
+  color: var(--accent-color, #8b5cf6);
+  border: 1px solid rgba(139,92,246,0.3);
+  cursor: pointer;
+  transition: all 0.25s ease;
+  flex-shrink: 0;
 }
 
-.stats-btn:hover {
-  background-color: #eff6ff;
-  border-color: #93c5fd;
+.auth-entry-btn:hover {
+  background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(109,40,217,0.2));
+  border-color: rgba(139,92,246,0.6);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(139,92,246,0.25);
 }
 
-.stats-btn svg {
-  width: 24px;
-  height: 24px;
+.auth-entry-btn svg {
+  width: 22px;
+  height: 22px;
 }
 
 .input-group {

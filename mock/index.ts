@@ -17,7 +17,100 @@ let todos = [
   },
 ]
 
+const users = [
+  {
+    id: '1001',
+    username: 'demo',
+    password: '123456',
+  },
+]
+
 export default [
+  {
+    url: '/api/auth/login',
+    method: 'post',
+    response: ({ body }: Record<string, unknown>) => {
+      const { username, password } = body as { username?: string; password?: string }
+      const normalizedUsername = username?.trim()
+
+      if (!normalizedUsername || !password) {
+        return {
+          code: 400,
+          message: '请输入账号和密码',
+          data: null,
+        }
+      }
+
+      const user = users.find(item => item.username === normalizedUsername)
+
+      if (!user || user.password !== password) {
+        return {
+          code: 401,
+          message: '账号或密码错误',
+          data: null,
+        }
+      }
+
+      return {
+        code: 200,
+        message: '登录成功',
+        data: {
+          token: `mock-token-${user.id}`,
+          user: {
+            id: user.id,
+            username: user.username,
+          },
+        },
+      }
+    },
+  },
+
+  {
+    url: '/api/auth/register',
+    method: 'post',
+    response: ({ body }: Record<string, unknown>) => {
+      const { username, password } = body as { username?: string; password?: string }
+      const normalizedUsername = username?.trim()
+
+      if (!normalizedUsername || !password) {
+        return {
+          code: 400,
+          message: '请输入账号和密码',
+          data: null,
+        }
+      }
+
+      const existedUser = users.find(item => item.username === normalizedUsername)
+      if (existedUser) {
+        return {
+          code: 409,
+          message: '该账号已存在',
+          data: null,
+        }
+      }
+
+      const newUser = {
+        id: Date.now().toString(),
+        username: normalizedUsername,
+        password,
+      }
+
+      users.unshift(newUser)
+
+      return {
+        code: 200,
+        message: '注册成功',
+        data: {
+          token: `mock-token-${newUser.id}`,
+          user: {
+            id: newUser.id,
+            username: newUser.username,
+          },
+        },
+      }
+    },
+  },
+
   // Get all todos
   {
     url: '/api/todos',
