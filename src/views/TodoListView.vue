@@ -7,12 +7,11 @@ import { getTodosApi, addTodoApi, toggleTodoApi, deleteTodoApi } from '../api/to
 
 const router = useRouter()
 const goAuth = () => router.push('/auth')
+const goStats = () => router.push('/stats')
 
 const todos = ref<Todo[]>([])
 const newTodoContent = ref('')
 const loading = ref(false)
-
-// 移除了 goStats 方法，因其实际业务绑定在底部的 <router-link> 元素中生效
 
 // 获取待办列表
 const fetchTodos = async () => {
@@ -72,19 +71,26 @@ onMounted(() => {
   <div class="container page-enter">
     <div class="header-container">
       <h1 class="title">My Tasks</h1>
-      <button class="auth-entry-btn" @click="goAuth" id="auth-entry-btn" aria-label="登录 / 注册">
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
-          <path fill-rule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clip-rule="evenodd" />
-        </svg>
-      </button>
+      <div class="header-actions">
+        <button class="auth-entry-btn" @click="goAuth" id="auth-entry-btn" aria-label="登录 / 注册">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor">
+            <path fill-rule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clip-rule="evenodd" />
+          </svg>
+        </button>
+        <button class="stats-entry-btn" @click="goStats" id="stats-entry-btn" aria-label="统计图表">
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.8" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+          </svg>
+        </button>
+      </div>
     </div>
-    
+
     <div class="input-group">
-      <input 
-        v-model="newTodoContent" 
+      <input
+        v-model="newTodoContent"
         @keyup.enter="handleAdd"
-        type="text" 
-        placeholder="Add a new task..." 
+        type="text"
+        placeholder="Add a new task..."
         class="todo-input"
       />
       <button @click="handleAdd" class="add-btn">
@@ -100,18 +106,18 @@ onMounted(() => {
 
     <div v-else class="todo-list">
       <TransitionGroup name="list">
-        <TodoItem 
-          v-for="todo in todos" 
-          :key="todo.id" 
-          :todo="todo" 
+        <TodoItem
+          v-for="todo in todos"
+          :key="todo.id"
+          :todo="todo"
           @toggle="toggleTodo"
           @delete="deleteTodo"
         />
       </TransitionGroup>
-      
+
       <div v-if="todos.length === 0" class="empty-state">
         <p>No tasks yet. Enjoy your day!</p>
-      </div> 
+      </div>
 
     </div>
   </div>
@@ -140,7 +146,15 @@ onMounted(() => {
   font-weight: bold;
 }
 
-.auth-entry-btn {
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  flex-shrink: 0;
+}
+
+.auth-entry-btn,
+.stats-entry-btn {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -155,6 +169,12 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
+.stats-entry-btn {
+  background: linear-gradient(135deg, rgba(59,130,246,0.14), rgba(29,78,216,0.1));
+  color: #3b82f6;
+  border-color: rgba(59,130,246,0.3);
+}
+
 .auth-entry-btn:hover {
   background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(109,40,217,0.2));
   border-color: rgba(139,92,246,0.6);
@@ -162,7 +182,15 @@ onMounted(() => {
   box-shadow: 0 4px 12px rgba(139,92,246,0.25);
 }
 
-.auth-entry-btn svg {
+.stats-entry-btn:hover {
+  background: linear-gradient(135deg, rgba(59,130,246,0.24), rgba(29,78,216,0.18));
+  border-color: rgba(59,130,246,0.55);
+  transform: scale(1.05);
+  box-shadow: 0 4px 12px rgba(59,130,246,0.2);
+}
+
+.auth-entry-btn svg,
+.stats-entry-btn svg {
   width: 22px;
   height: 22px;
 }
