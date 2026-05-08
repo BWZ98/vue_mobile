@@ -1,16 +1,56 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, shallowRef } from 'vue'
+import { ref, computed, nextTick, onMounted, onUnmounted, shallowRef } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import * as echarts from 'echarts'
 import { Calendar as VanCalendar } from 'vant'
 import 'vant/es/calendar/style'
-import { getStatsApi } from '../api/stats'
+import { getStatsApi, type StatItem } from '../api/stats'
 
 const router = useRouter()
 const route = useRoute()
 const chartRef = ref<HTMLElement | null>(null)
 const chartInstance = shallowRef<echarts.ECharts | null>(null)
+const splitChartRefs = ref<HTMLElement[]>([])
+const splitChartInstances = shallowRef<echarts.ECharts[]>([])
 const loading = ref(false)
+
+const MIN_SPAN = 3600 * 1000
+const MAX_SPAN = 24 * 3600 * 1000
+
+type SplitChartItem = {
+  id: number
+  name: string
+  color: string
+  data: number[][]
+  maxCount: number
+}
+
+type LineChartSeries = {
+  name: string
+  type: 'line'
+  symbol: 'circle'
+  symbolSize: number
+  showSymbol: boolean
+  smooth: boolean
+  emphasis: { disabled: boolean }
+  animation: boolean
+  itemStyle: {
+    borderColor: string
+    borderWidth: number
+  }
+  lineStyle: {
+    color: string
+    width: number
+  }
+  data: number[][]
+}
+
+type ChartRenderModel = {
+  isMultiSeries: boolean
+  globalMaxCount: number
+  legendData: string[]
+  seriesList: LineChartSeries[]
+}
 
 const axisLayout = ref({ tickY1: 0, tickY2: 0, labelY: 0 })
 const axisLabels = ref({
@@ -18,6 +58,9 @@ const axisLabels = ref({
   mid: { x: -100, text: '' },
   right: { x: -100, text: '' },
 })
+const shouldRenderSplitSeriesCharts = computed(() => route.query.splitSeries == 'false')
+const isSplitSeriesMode = ref(false)
+const splitChartItems = ref<SplitChartItem[]>([])
 
 // 当前选中的时间范围 tab
 const activeTab = ref('24h')
@@ -35,6 +78,44 @@ let globalSyncZoomState: (() => void) | null = null
 
 const goBack = () => {
   router.push('/')
+}
+
+const setSplitChartRef = (el: unknown, index: number) => {
+  if (el instanceof HTMLElement) {
+    splitChartRefs.value[index] = el
+  }
+}
+
+const disposeSplitCharts = () => {
+  splitChartInstances.value.forEach(instance => instance.dispose())
+  splitChartInstances.value = []
+  splitChartRefs.value = []
+}
+
+const getActiveChartInstances = () => {
+  if (isSplitSeriesMode.value) return splitChartInstances.value
+  return chartInstance.value ? [chartInstance.value] : []
+}
+
+const setZoomForActiveCharts = (startValue: number, endValue: number) => {
+  const instances = getActiveChartInstances()
+  if (instances.length === 0) return false
+
+  instances.forEach(instance => {
+    instance.setOption({
+      dataZoom: [{
+        startValue,
+        endValue,
+      }],
+    })
+  })
+
+  if (!isSplitSeriesMode.value) {
+    globalSyncZoomState?.()
+    setTimeout(() => globalUpdateLabels?.(), 0)
+  }
+
+  return true
 }
 
 // 根据当前 tab 计算 dataZoom 的 startValue（绝对时间戳）
@@ -71,123 +152,250 @@ const handleDateSelect = (date: Date) => {
   showCalendar.value = false
   activeTab.value = '' // 清除 tab 激活态
   // 缩放到选中日期的 00:00 ~ 23:59:59
-  if (!chartInstance.value) return
   const start = new Date(date)
   start.setHours(0, 0, 0, 0)
   const end = new Date(date)
   end.setHours(23, 59, 59, 999)
-  chartInstance.value.setOption({
-    dataZoom: [{
-      startValue: start.getTime(),
-      endValue: end.getTime(),
-    }],
-  })
-  globalSyncZoomState?.()
-  setTimeout(() => globalUpdateLabels?.(), 0)
+  setZoomForActiveCharts(start.getTime(), end.getTime())
 }
 
 // 仅调整可视区域，不重新请求数据
 const applyZoom = () => {
-  if (!chartInstance.value) return
-  chartInstance.value.setOption({
-    dataZoom: [{
+  setZoomForActiveCharts(getZoomStartValue(), Date.now())
+}
+
+const createLineSeries = (name: string, color: string, data: number[][]): LineChartSeries => ({
+  name,
+  type: 'line',
+  symbol: 'circle',
+  symbolSize: 6,
+  showSymbol: false,
+  smooth: false,
+  emphasis: { disabled: true },
+  animation: false,
+  itemStyle: {
+    borderColor: '#fff',
+    borderWidth: 1,
+  },
+  lineStyle: {
+    color,
+    width: 2,
+  },
+  data,
+})
+
+const buildChartRenderModel = (rawData: StatItem[]): ChartRenderModel => {
+  const globalMaxCount = rawData.reduce((max, item) => Math.max(max, item.count), 0)
+  const isMultiSeries = rawData.length > 0 && typeof rawData[0]?.person !== 'undefined'
+  const legendData: string[] = []
+  const seriesList: LineChartSeries[] = []
+
+  if (!isMultiSeries) {
+    const singleData = rawData.map((item) => [item.time, item.count])
+    seriesList.push(createLineSeries('完成数', '#3b82f6', singleData))
+
+    return { isMultiSeries, globalMaxCount, legendData, seriesList }
+  }
+
+  const groupedData = new Map<number, number[][]>()
+
+  rawData.forEach((item) => {
+    const personId = item.person
+    if (!groupedData.has(personId)) groupedData.set(personId, [])
+    groupedData.get(personId)!.push([item.time, item.count])
+  })
+
+  const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
+
+  Array.from(groupedData.keys())
+    .sort((a, b) => a - b)
+    .forEach((personId, index) => {
+      const name = `系列${personId}`
+      const color = colors[index % colors.length] ?? '#3b82f6'
+      legendData.push(name)
+      seriesList.push(createLineSeries(name, color, groupedData.get(personId)!))
+    })
+
+  return { isMultiSeries, globalMaxCount, legendData, seriesList }
+}
+
+const resetSingleChartOverlays = () => {
+  globalUpdateLabels = null
+  globalSyncZoomState = null
+  axisLabels.value = {
+    left: { x: -100, text: '' },
+    mid: { x: -100, text: '' },
+    right: { x: -100, text: '' },
+  }
+}
+
+const toSplitChartItem = (series: LineChartSeries, index: number): SplitChartItem => ({
+  id: index,
+  name: series.name,
+  color: series.lineStyle.color,
+  data: series.data,
+  maxCount: Math.max(...series.data.map(item => item[1] ?? 0), 1),
+})
+
+const createSplitChartOption = (item: SplitChartItem): echarts.EChartsOption => ({
+  animation: false,
+  legend: {
+    data: [item.name],
+    top: 6,
+    right: '5%',
+    icon: 'roundRect',
+    itemWidth: 14,
+    itemHeight: 8,
+    textStyle: {
+      color: item.color,
+      fontSize: 12,
+    },
+  },
+  grid: {
+    top: 46,
+    left: '5%',
+    right: '5%',
+    bottom: '12%',
+    containLabel: true,
+  },
+  tooltip: {
+    trigger: 'axis',
+    transitionDuration: 0,
+    axisPointer: {
+      type: 'line',
+      lineStyle: {
+        color: item.color,
+        type: 'dashed',
+      },
+      label: {
+        show: false,
+      },
+    },
+  },
+  xAxis: {
+    type: 'time',
+    splitNumber: 2,
+    axisLine: {
+      lineStyle: {
+        color: 'rgba(0, 0, 0, 0.4)',
+      },
+    },
+    axisTick: {
+      show: false,
+    },
+    axisLabel: {
+      color: 'rgba(0, 0, 0, 0.4)',
+      hideOverlap: true,
+      fontSize: 12,
+    },
+    splitLine: {
+      show: false,
+    },
+  },
+  yAxis: {
+    type: 'value',
+    max: Math.floor(item.maxCount * 1.5),
+    axisLabel: {
+      color: 'rgba(0, 0, 0, 0.4)',
+      fontSize: 12,
+    },
+    splitLine: {
+      lineStyle: {
+        type: 'dashed',
+        color: '#eee',
+      },
+    },
+  },
+  dataZoom: [
+    {
+      type: 'inside',
+      filterMode: 'filter',
+      minValueSpan: MIN_SPAN,
+      maxValueSpan: MAX_SPAN,
+      xAxisIndex: [0],
       startValue: getZoomStartValue(),
       endValue: Date.now(),
-    }],
+    },
+  ],
+  series: [
+    createLineSeries(item.name, item.color, item.data),
+  ],
+})
+
+const focusSplitChartsByTimestamp = () => {
+  const targetTimestampStr = route.query.timestamp as string
+  const targetTime = Number(targetTimestampStr)
+  if (!targetTimestampStr || isNaN(targetTime)) return
+
+  activeTab.value = ''
+  const halfSpan = 3 * 3600 * 1000
+  splitChartItems.value.forEach((item, index) => {
+    const dataIndex = item.data.findIndex((d: number[]) => d[0] === targetTime)
+    const instance = splitChartInstances.value[index]
+    if (dataIndex === -1 || !instance) return
+
+    instance.dispatchAction({
+      type: 'dataZoom',
+      dataZoomIndex: 0,
+      startValue: targetTime - halfSpan,
+      endValue: targetTime + halfSpan,
+    })
+    instance.dispatchAction({
+      type: 'showTip',
+      seriesIndex: 0,
+      dataIndex,
+    })
   })
-  globalSyncZoomState?.()
-  setTimeout(() => globalUpdateLabels?.(), 0)
+}
+
+const renderSplitSeriesCharts = async (seriesList: LineChartSeries[]) => {
+  chartInstance.value?.dispose()
+  chartInstance.value = null
+  resetSingleChartOverlays()
+
+  disposeSplitCharts()
+  isSplitSeriesMode.value = true
+  splitChartItems.value = seriesList.map(toSplitChartItem)
+
+  await nextTick()
+
+  splitChartInstances.value = splitChartItems.value
+    .map((item, index) => {
+      const chartEl = splitChartRefs.value[index]
+      if (!chartEl) return null
+
+      const instance = echarts.init(chartEl)
+      instance.setOption(createSplitChartOption(item))
+      return instance
+    })
+    .filter((instance): instance is echarts.ECharts => Boolean(instance))
+
+  focusSplitChartsByTimestamp()
 }
 
 const initChart = async () => {
-  if (!chartRef.value) return
-
-  const MIN_SPAN = 3600 * 1000
-  const MAX_SPAN = 24 * 3600 * 1000
-
-  chartInstance.value = echarts.init(chartRef.value)
-
   // 始终请求 30 天数据
   try {
     loading.value = true
     const rawData = await getStatsApi('30d')
-    
-    let globalMaxCount = 0
-    rawData.forEach(item => {
-      if (item.count > globalMaxCount) globalMaxCount = item.count
-    })
 
-    // 判断是否包含多系列数据
-    const isMultiSeries = rawData.length > 0 && typeof rawData[0]?.person !== 'undefined'
-    
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const seriesList: any[] = []
-    const legendData: string[] = []
-    
-    if (isMultiSeries) {
-      const groupedData = new Map<number, number[][]>()
-      const personNames = new Map<number, string>()
-      
-      rawData.forEach((item) => {
-        const personId = item.person as number
-        if (!groupedData.has(personId)) {
-          groupedData.set(personId, [])
-          personNames.set(personId, `系列${personId}`)
-        }
-        groupedData.get(personId)!.push([item.time, item.count])
-      })
-      
-      const colors = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6']
-      let colorIndex = 0
-      
-      const sortedKeys = Array.from(groupedData.keys()).sort((a, b) => a - b)
-      
-      sortedKeys.forEach((personId) => {
-        const name = personNames.get(personId)!
-        legendData.push(name)
-        seriesList.push({
-          name: name,
-          type: 'line',
-          symbol: 'circle',
-          symbolSize: 6,
-          showSymbol: false,
-          smooth: false,
-          emphasis: { disabled: true },
-          animation: false,
-          itemStyle: {
-            borderColor: '#fff',
-            borderWidth: 1,
-          },
-          lineStyle: {
-            color: colors[colorIndex % colors.length],
-            width: 2,
-          },
-          data: groupedData.get(personId)!,
-        })
-        colorIndex++
-      })
-    } else {
-      const singleData = rawData.map((item) => [item.time, item.count])
-      seriesList.push({
-        name: '完成数',
-        type: 'line',
-        symbol: 'circle',
-        symbolSize: 6,
-        showSymbol: false,
-        smooth: false,
-        emphasis: { disabled: true },
-        animation: false,
-        itemStyle: {
-          borderColor: '#fff',
-          borderWidth: 1,
-        },
-        lineStyle: {
-          color: '#3b82f6',
-          width: 2,
-        },
-        data: singleData,
-      })
+    const model = buildChartRenderModel(rawData)
+    const renderIndependentSeriesCharts = model.isMultiSeries && shouldRenderSplitSeriesCharts.value
+
+    if (renderIndependentSeriesCharts) {
+      await renderSplitSeriesCharts(model.seriesList)
+      return
     }
+
+    const { globalMaxCount, isMultiSeries, legendData, seriesList } = model
+
+    isSplitSeriesMode.value = false
+    splitChartItems.value = []
+    disposeSplitCharts()
+
+    if (!chartRef.value) return
+    chartInstance.value?.dispose()
+    chartInstance.value = echarts.init(chartRef.value)
 
     const option: echarts.EChartsOption = {
       animation: false,
@@ -296,7 +504,7 @@ const initChart = async () => {
         const startVal = dz.startValue
         const endVal = dz.endValue
         const midVal = (startVal + endVal) / 2
-        
+
         const formatTime = (v: number) => {
           const date = new Date(v)
           const M = (date.getMonth() + 1).toString().padStart(2, '0')
@@ -317,11 +525,11 @@ const initChart = async () => {
         const coordSys = component.coordinateSystem
         if (!coordSys) return
         const grid = coordSys.getRect()
-        
+
         axisLayout.value.tickY1 = grid.y + grid.height
         axisLayout.value.tickY2 = grid.y + grid.height + 4
         axisLayout.value.labelY = grid.y + grid.height + 8
-        
+
         axisLabels.value.left = { x: leftPixel, text: formatTime(startVal) }
         axisLabels.value.mid = { x: midPixel, text: formatTime(midVal) }
         axisLabels.value.right = { x: rightPixel, text: formatTime(endVal) }
@@ -465,11 +673,11 @@ const initChart = async () => {
     // ─── 核心优化：拦截移动事件，防止平移干扰 ──────────────
     const handleMove = (e: MouseEvent | TouchEvent) => {
       if (!crosshairActive) return
-      
+
       // 拦截事件，阻止 ECharts 内部平移和浏览器滚动
       e.stopImmediatePropagation()
       if (e.cancelable) e.preventDefault()
-      
+
       let x = 0, y = 0
       if (e instanceof MouseEvent) {
         x = e.offsetX
@@ -482,7 +690,7 @@ const initChart = async () => {
           y = touch.clientY - rect.top
         }
       }
-      
+
       showCrosshair(x, y)
     }
 
@@ -530,14 +738,15 @@ const initChart = async () => {
       const targetTime = Number(targetTimestampStr)
       if (!isNaN(targetTime)) {
         let searchData: number[][] = []
-        if (seriesList.length > 0 && seriesList[0].data) {
-          searchData = seriesList[0].data
+        const firstSeries = seriesList[0]
+        if (firstSeries?.data) {
+          searchData = firstSeries.data
         }
         const dataIndex = searchData.findIndex((d: number[]) => d[0] === targetTime)
         if (dataIndex !== -1) {
           activeTab.value = '' // 清除 tab 选中状态
           const halfSpan = 3 * 3600 * 1000 // 中心各延伸 3 小时，总计 6 小时
-          
+
           const onRendered = () => {
             chartInstance.value!.off('rendered', onRendered)
             chartInstance.value!.dispatchAction({
@@ -547,7 +756,7 @@ const initChart = async () => {
             })
             crosshairActive = true // 激活十字线状态以便后续交互可正常隐藏
           }
-          
+
           chartInstance.value!.on('rendered', onRendered)
 
           chartInstance.value!.dispatchAction({
@@ -567,8 +776,10 @@ const initChart = async () => {
 }
 
 const handleResize = () => {
-  chartInstance.value?.resize()
-  globalUpdateLabels?.()
+  getActiveChartInstances().forEach(instance => instance.resize())
+  if (!isSplitSeriesMode.value) {
+    globalUpdateLabels?.()
+  }
 }
 
 onMounted(() => {
@@ -579,6 +790,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
   chartInstance.value?.dispose()
+  disposeSplitCharts()
 })
 </script>
 
@@ -593,11 +805,11 @@ onUnmounted(() => {
       <h1 class="title">统计图表</h1>
       <div class="placeholder"></div>
     </div>
-    
+
     <div class="filter-row">
       <div class="filter-tabs">
-        <button 
-          v-for="tab in tabs" 
+        <button
+          v-for="tab in tabs"
           :key="tab.value"
           class="tab-btn"
           :class="{ active: activeTab === tab.value }"
@@ -627,19 +839,29 @@ onUnmounted(() => {
       @select="handleDateSelect"
     />
 
-    <div class="chart-container">
+    <div v-if="isSplitSeriesMode" class="split-chart-list">
+      <div
+        v-for="(item, index) in splitChartItems"
+        :key="item.id"
+        class="chart-container split-chart-container"
+      >
+        <div v-if="loading" class="loading-overlay">
+          <div class="spinner"></div>
+        </div>
+        <div :ref="(el) => setSplitChartRef(el, index)" class="echarts-dom"></div>
+      </div>
+    </div>
+
+    <div v-else class="chart-container">
       <div v-if="loading" class="loading-overlay">
         <div class="spinner"></div>
       </div>
       <div ref="chartRef" class="echarts-dom"></div>
-      
-      <!-- Custom DOM Labels for better performance -->
+
       <div v-show="axisLabels.left.text" class="custom-x-axis">
-        <!-- Ticks -->
         <div class="axis-tick" :style="{ transform: `translate3d(${axisLabels.left.x}px, ${axisLayout.tickY1}px, 0)`, height: (axisLayout.tickY2 - axisLayout.tickY1) + 'px' }"></div>
         <div class="axis-tick" :style="{ transform: `translate3d(${axisLabels.mid.x}px, ${axisLayout.tickY1}px, 0)`, height: (axisLayout.tickY2 - axisLayout.tickY1) + 'px' }"></div>
         <div class="axis-tick" :style="{ transform: `translate3d(${axisLabels.right.x}px, ${axisLayout.tickY1}px, 0)`, height: (axisLayout.tickY2 - axisLayout.tickY1) + 'px' }"></div>
-        <!-- Labels -->
         <div class="axis-label" :style="{ transform: `translate3d(calc(${axisLabels.left.x}px - 50%), ${axisLayout.labelY}px, 0)` }">{{ axisLabels.left.text }}</div>
         <div class="axis-label" :style="{ transform: `translate3d(calc(${axisLabels.mid.x}px - 50%), ${axisLayout.labelY}px, 0)` }">{{ axisLabels.mid.text }}</div>
         <div class="axis-label" :style="{ transform: `translate3d(calc(${axisLabels.right.x}px - 50%), ${axisLayout.labelY}px, 0)` }">{{ axisLabels.right.text }}</div>
@@ -771,6 +993,17 @@ onUnmounted(() => {
   background: white;
   border-radius: 16px;
   position: relative;
+}
+
+.split-chart-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.split-chart-container {
+  aspect-ratio: 16 / 9;
+  min-height: 220px;
 }
 
 .echarts-dom {
