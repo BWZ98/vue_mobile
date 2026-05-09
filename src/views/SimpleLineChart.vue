@@ -499,6 +499,9 @@ function initChart() {
         filterMode: calcFilterMode,
         minValueSpan: MIN_SPAN,
         maxValueSpan: MAX_SPAN, // 一屏最多展示24小时
+        zoomOnMouseWheel: false,
+        moveOnMouseWheel: false,
+        preventDefaultMouseMove: false,
         xAxisIndex: [0],
         startValue: getZoomStartValue(props.displayType || 24),
         endValue: props.timeRange?.endTime ?? Date.now(),
@@ -602,10 +605,17 @@ function initChart() {
   // 2. 结束防抖：两指变单指时延迟 300ms 退出双指状态，吸收先后抬起引起的中心点突变跳动。
   let isPinching = false
   let unpinchTimer: ReturnType<typeof setTimeout> | null = null
+  let singleTouchStartX = 0
+  let singleTouchStartY = 0
+  let crosshairActive = false
   let pinchSkipCount = 0 // 双指刚落下后需要跳过的 dataZoom 帧数
   const PINCH_SKIP_FRAMES = 3 // 跳过前 3 帧，覆盖初始落指颤动（pointermove 频率很高，3帧约 50ms）
 
   const handleTouchStart = (e: TouchEvent) => {
+    if (e.touches.length === 1) {
+      singleTouchStartX = e.touches[0].clientX
+      singleTouchStartY = e.touches[0].clientY
+    }
     if (e.touches.length >= 2) {
       isPinching = true
       pinchSkipCount = PINCH_SKIP_FRAMES
@@ -613,6 +623,18 @@ function initChart() {
         clearTimeout(unpinchTimer)
         unpinchTimer = null
       }
+    }
+  }
+
+  const handleSingleTouchMove = (e: TouchEvent) => {
+    if (crosshairActive || e.touches.length !== 1)
+      return
+
+    const touch = e.touches[0]
+    const deltaX = touch.clientX - singleTouchStartX
+    const deltaY = touch.clientY - singleTouchStartY
+    if (Math.abs(deltaY) > Math.abs(deltaX) && Math.abs(deltaY) > 6) {
+      e.stopImmediatePropagation()
     }
   }
 
@@ -630,6 +652,7 @@ function initChart() {
 
   // 绑定原生事件，启用捕获阶段确保准确截获，设为 passive 对性能无影响
   chartEl.addEventListener('touchstart', handleTouchStart, { capture: true, passive: true })
+  chartEl.addEventListener('touchmove', handleSingleTouchMove, { capture: true, passive: true })
   chartEl.addEventListener('touchend', handleTouchEnd, { capture: true, passive: true })
   chartEl.addEventListener('touchcancel', handleTouchEnd, { capture: true, passive: true })
 
@@ -649,21 +672,12 @@ function initChart() {
     prevEndValue = initDz.endValue
   }
 
-  // 缩放极限, 鼠标滚轮
-  chartEl.addEventListener('wheel', (e) => {
-    // deltaY < 0 = 向上滚 = 放大(span变小)，deltaY > 0 = 向下滚 = 缩小(span变大)
-    if ((e.deltaY < 0 && currentSpan <= MIN_SPAN) || (e.deltaY > 0 && currentSpan >= MAX_SPAN)) {
-      e.preventDefault()
-      e.stopImmediatePropagation()
-    }
-  }, { capture: true })
 
   // 长按参考线
   // 长按 500ms 后进入参考线模式：显示竖线 + tooltip，手指拖动时跟随
   // 期间抑制 dataZoom 平移，使图表保持静止
   const LONG_PRESS_DURATION = 500
   let longPressTimer: ReturnType<typeof setTimeout> | null = null
-  let crosshairActive = false
   let startX = 0
   let startY = 0
 
@@ -904,6 +918,7 @@ defineExpose({
   .chart {
     width: 100%;
     height: 280px;
+    touch-action: pan-y pinch-zoom;
   }
   .custom-x-axis {
     position: absolute;
