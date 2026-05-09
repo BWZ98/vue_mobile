@@ -55,6 +55,11 @@ interface LineChartExpose {
   applyZoomByTimestamp?: (startTime: number, endTime: number) => void
 }
 
+interface ChartRenderItem {
+  key: string
+  data: MonitorTrendData
+}
+
 const emit = defineEmits<{
   (e: 'update:trendLoading', value: boolean): void
   (e: 'refresh'): void
@@ -146,8 +151,14 @@ const isVirtualMonitors = computed(() => {
 
 const shouldSplitSeriesCharts = computed(() => props.routeQuery?.splitSeries === '1')
 
-const chartRenderList = computed(() => {
-  const rawData = mockChartData.value
+const chartRenderList = ref<ChartRenderItem[]>([])
+
+function sortByMp([mpA]: [string | number, MonitorTrendItem[]], [mpB]: [string | number, MonitorTrendItem[]]) {
+  return Number(mpA) - Number(mpB)
+}
+
+function getChartRenderList(data: MonitorTrendData) {
+  const rawData = data
   const mts = Array.isArray(rawData?.mts) ? rawData.mts : []
   if (!mts.length) {
     return []
@@ -168,14 +179,14 @@ const chartRenderList = computed(() => {
     groupedData.set(groupKey, group)
   })
 
-  return Array.from(groupedData.entries()).map(([groupKey, group]) => ({
+  return Array.from(groupedData.entries()).sort(sortByMp).map(([groupKey, group]) => ({
     key: String(groupKey),
     data: {
       ...rawData,
       mts: group,
     },
   }))
-})
+}
 
 function setLineChartRef(el: unknown, index: number) {
   if (el) {
@@ -294,6 +305,7 @@ async function getMonitorItemTrend() {
 
 // 处理响应数据
 function handleResData(data: MonitorTrendData) {
+  chartRenderList.value = getChartRenderList(data)
   return data
 }
 
